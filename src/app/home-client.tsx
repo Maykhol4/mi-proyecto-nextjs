@@ -21,7 +21,8 @@ import {
   Minus,
   IterationCw,
 } from 'lucide-react';
-import type { BleDevice, BleClientInterface } from '@capacitor-community/bluetooth-le';
+// Do not import types from the BLE client here to avoid server-side errors.
+// We will define them inline or use `any` where necessary.
 
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -123,31 +124,30 @@ export default function HomeClient() {
   const [tempDeviceName, setTempDeviceName] = useState('AQUADATA-2.0');
   const [isBleInitialized, setIsBleInitialized] = useState(false);
 
-  const bleDeviceRef = useRef<BleDevice | null>(null);
-  const bleClientRef = useRef<BleClientInterface | null>(null);
+  const bleClientRef = useRef<any>(null); // Use `any` to avoid type import issues
+  const bleDeviceRef = useRef<any>(null);
   const receivedDataBuffer = useRef('');
 
   useEffect(() => {
     const initializeBle = async () => {
-      try {
-        const { BleClient } = await import('@capacitor-community/bluetooth-le');
-        bleClientRef.current = BleClient;
-        await bleClientRef.current.initialize({ androidNeverForLocation: true });
-        setIsBleInitialized(true);
-      } catch (error) {
-        console.error('Error initializing BleClient', error);
-        toast({
-          variant: 'destructive',
-          title: 'BLE Error',
-          description: 'Could not initialize Bluetooth LE client. Please ensure Bluetooth is enabled and permissions are granted.',
-        });
+      if (typeof window !== 'undefined') {
+        try {
+          const { BleClient } = await import('@capacitor-community/bluetooth-le');
+          bleClientRef.current = BleClient;
+          await bleClientRef.current.initialize({ androidNeverForLocation: true });
+          setIsBleInitialized(true);
+        } catch (error) {
+          console.error('Error initializing BleClient', error);
+          toast({
+            variant: 'destructive',
+            title: 'BLE Error',
+            description: 'Could not initialize Bluetooth LE client. Please ensure Bluetooth is enabled and permissions are granted.',
+          });
+        }
       }
     };
     
-    // Ensure this runs only on the client
-    if (typeof window !== 'undefined') {
-      initializeBle();
-    }
+    initializeBle();
     
     const savedName = localStorage.getItem('bleDeviceName');
     if (savedName) {
@@ -199,7 +199,7 @@ export default function HomeClient() {
         device.deviceId,
         UART_SERVICE_UUID,
         UART_TX_CHARACTERISTIC_UUID,
-        (value) => {
+        (value: DataView) => {
           receivedDataBuffer.current += decoder.decode(value);
           const lastNewline = receivedDataBuffer.current.lastIndexOf('\n');
           if (lastNewline !== -1) {
