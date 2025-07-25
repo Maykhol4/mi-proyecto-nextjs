@@ -27,6 +27,7 @@ import {
   IterationCw,
   Clock,
 } from 'lucide-react';
+import { BleClient, type BleDevice } from '@capacitor-community/bluetooth-le';
 
 import { useToast } from '@/hooks/use-toast';
 import { runAnomalyDetection } from './actions';
@@ -132,8 +133,7 @@ export default function Home() {
   const [deviceName, setDeviceName] = useState('AQUADATA-2.0');
   const [tempDeviceName, setTempDeviceName] = useState('AQUADATA-2.0');
 
-  const bleDevice = useRef<BluetoothDevice | null>(null);
-  const rxCharacteristic = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
+  const bleDevice = useRef<BleDevice | null>(null);
   const receivedDataBuffer = useRef('');
 
   useEffect(() => {
@@ -142,7 +142,20 @@ export default function Home() {
       setDeviceName(savedName);
       setTempDeviceName(savedName);
     }
-  }, []);
+    
+    (async () => {
+      try {
+        await BleClient.initialize();
+      } catch (error) {
+         console.error('Error initializing BleClient', error);
+         toast({
+          variant: 'destructive',
+          title: 'BLE Error',
+          description: 'Could not initialize Bluetooth LE client.',
+        });
+      }
+    })();
+  }, [toast]);
 
   const handleData = useCallback(
     async (data: SensorData) => {
@@ -161,39 +174,9 @@ export default function Home() {
     },
     [toast]
   );
-
-  const handleCharacteristicValueChanged = useCallback(
-    (event: Event) => {
-      const target = event.target as BluetoothRemoteGATTCharacteristic;
-      const value = target.value;
-      if (!value) return;
-
-      const decoder = new TextDecoder('utf-8');
-      receivedDataBuffer.current += decoder.decode(value, { stream: true });
-
-      const lastNewline = receivedDataBuffer.current.lastIndexOf('\n');
-      if (lastNewline !== -1) {
-        const completeMessages = receivedDataBuffer.current.substring(0, lastNewline);
-        receivedDataBuffer.current = receivedDataBuffer.current.substring(lastNewline + 1);
-
-        completeMessages.split('\n').forEach(message => {
-          if (message) {
-            try {
-              const jsonData: SensorData = JSON.parse(message);
-              handleData(jsonData);
-            } catch (error) {
-              console.error('Failed to parse JSON:', error, 'Message:', `"${message}"`);
-            }
-          }
-        });
-      }
-    },
-    [handleData]
-  );
-
+  
   const onDisconnected = useCallback(() => {
     bleDevice.current = null;
-    rxCharacteristic.current = null;
     setIsConnected(false);
     setIsConnecting(false);
     setSensorData(initialSensorData);
@@ -205,33 +188,43 @@ export default function Home() {
   }, [toast]);
 
   const handleConnect = async () => {
-    if (!navigator.bluetooth) {
-      toast({
-        variant: 'destructive',
-        title: 'Unsupported Browser',
-        description: 'Web Bluetooth API is not available in your browser.',
-      });
-      return;
-    }
-
     setIsConnecting(true);
     try {
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ name: deviceName }],
+      const device = await BleClient.requestDevice({
+        name: deviceName,
         optionalServices: [UART_SERVICE_UUID],
       });
-
+      
       bleDevice.current = device;
-      bleDevice.current.addEventListener('gattserverdisconnected', onDisconnected);
-      const server = await device.gatt?.connect();
-      if (!server) throw new Error('Could not connect to GATT server.');
+      
+      await BleClient.connect(device.deviceId, (deviceId) => onDisconnected());
+      
+      const decoder = new TextDecoder();
+      
+      await BleClient.startNotifications(
+        device.deviceId,
+        UART_SERVICE_UUID,
+        UART_TX_CHARACTERISTIC_UUID,
+        (value) => {
+          receivedDataBuffer.current += decoder.decode(value);
+          const lastNewline = receivedDataBuffer.current.lastIndexOf('\n');
+          if (lastNewline !== -1) {
+            const completeMessages = receivedDataBuffer.current.substring(0, lastNewline);
+            receivedDataBuffer.current = receivedDataBuffer.current.substring(lastNewline + 1);
 
-      const service = await server.getPrimaryService(UART_SERVICE_UUID);
-      const txCharacteristic = await service.getCharacteristic(UART_TX_CHARACTERISTIC_UUID);
-      rxCharacteristic.current = await service.getCharacteristic(UART_RX_CHARACTERISTIC_UUID);
-
-      await txCharacteristic.startNotifications();
-      txCharacteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+            completeMessages.split('\n').forEach(message => {
+              if (message) {
+                try {
+                  const jsonData: SensorData = JSON.parse(message);
+                  handleData(jsonData);
+                } catch (error) {
+                  console.error('Failed to parse JSON:', error, 'Message:', `"${message}"`);
+                }
+              }
+            });
+          }
+        }
+      );
 
       setIsConnected(true);
       toast({
@@ -250,11 +243,15 @@ export default function Home() {
     }
   };
 
-  const handleDisconnect = () => {
-    if (bleDevice.current?.gatt?.connected) {
-      bleDevice.current.gatt.disconnect();
-    } else {
-      onDisconnected();
+  const handleDisconnect = async () => {
+    if (bleDevice.current) {
+        try {
+            await BleClient.disconnect(bleDevice.current.deviceId);
+        } catch(error) {
+            console.error("Failed to disconnect", error);
+        } finally {
+            onDisconnected();
+        }
     }
   };
 
@@ -285,7 +282,7 @@ export default function Home() {
 
   const phStatus = getSensorStatus(sensorData.ph, 6.0, 9.0, 6.5, 8.5);
   const doStatus = getSensorStatus(sensorData.do_conc, 4.0, undefined, 6.0, undefined);
-  const tempStatus = getSensorStatus(sensorData.temp, undefined, undefined, undefined, undefined); // No warnings/critical for temp in this logic
+  const tempStatus = getSensorStatus(sensorData.temp, undefined, undefined, undefined, undefined);
   const satStatus = getSensorStatus(sensorData.do_sat, undefined, undefined, undefined, undefined);
 
   if (!isConnected) {
