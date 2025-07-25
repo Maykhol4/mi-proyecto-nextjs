@@ -25,8 +25,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 
-// --- Type definitions to avoid ANY hard dependency on the BLE plugin in the server environment ---
-
+// --- Type definitions para evitar cualquier importación del paquete BLE ---
+// Esto es crucial para prevenir el "Internal Server Error" en Next.js.
 interface BleDevice {
   deviceId: string;
   name?: string;
@@ -41,7 +41,7 @@ interface BleClient {
   stopNotifications: (deviceId: string, service: string, characteristic: string) => Promise<void>;
 }
 
-// --- Data structure from the sensor ---
+// --- Estructura de datos del sensor ---
 interface SensorData {
   ph: number | null;
   do_conc: number | null;
@@ -69,7 +69,7 @@ const initialSensorData: SensorData = {
   simulation_cycle: 0,
 };
 
-// --- Reusable Sensor Card Component ---
+// --- Componente de tarjeta de sensor reutilizable ---
 const SensorCard: FC<{
   icon: React.ReactNode;
   title: string;
@@ -115,12 +115,11 @@ const SensorCard: FC<{
   );
 };
 
-
-// --- Main Client Component ---
+// --- Componente principal del cliente ---
 export default function HomeClient() {
   const { toast } = useToast();
   
-  // State Management
+  // Gestión de estado
   const [sensorData, setSensorData] = useState<SensorData>(initialSensorData);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -129,28 +128,28 @@ export default function HomeClient() {
   const [tempDeviceName, setTempDeviceName] = useState('AQUADATA-2.0');
   const [isBleInitialized, setIsBleInitialized] = useState(false);
 
-  // Refs for stable instances
+  // Referencias para instancias estables
   const bleClientRef = useRef<BleClient | null>(null);
   const connectedDeviceRef = useRef<BleDevice | null>(null);
   const receivedDataBuffer = useRef('');
   
-  // Effect for one-time initialization
+  // Efecto para inicialización segura y única de BLE
   useEffect(() => {
     const initializeBle = async () => {
-      // Ensure this only runs in a browser environment
+      // Nos aseguramos de que esto solo se ejecute en el navegador
       if (typeof window !== 'undefined') {
         try {
-          // Dynamic import to prevent server-side execution
+          // Importación dinámica para evitar que el servidor procese el paquete
           const { BleClient } = await import('@capacitor-community/bluetooth-le');
           bleClientRef.current = BleClient;
           await BleClient.initialize({ androidNeverForLocation: true });
           setIsBleInitialized(true);
         } catch (error) {
-          console.error('Error initializing BleClient', error);
+          console.error('Error inicializando BleClient', error);
           toast({
             variant: 'destructive',
-            title: 'BLE Error',
-            description: 'Could not initialize Bluetooth. Ensure it is enabled and permissions are granted.',
+            title: 'Error de BLE',
+            description: 'No se pudo inicializar Bluetooth. Asegúrate de que esté activado y los permisos concedidos.',
           });
         }
       }
@@ -165,30 +164,30 @@ export default function HomeClient() {
     }
   }, [toast]);
 
-  // Callback to handle disconnection events
+  // Callback para manejar eventos de desconexión
   const onDisconnected = useCallback(() => {
     connectedDeviceRef.current = null;
     setIsConnected(false);
     setIsConnecting(false);
     setSensorData(initialSensorData);
     toast({
-      title: 'Disconnected',
-      description: 'Bluetooth device has been disconnected.',
+      title: 'Desconectado',
+      description: 'El dispositivo Bluetooth ha sido desconectado.',
     });
   }, [toast]);
 
-  // Callback to process incoming data
+  // Callback para procesar datos entrantes
   const handleData = useCallback((data: SensorData) => {
     setSensorData(data);
   }, []);
 
-  // Main connection logic
+  // Lógica de conexión principal
   const handleConnect = async () => {
     if (!isBleInitialized || !bleClientRef.current) {
       toast({
         variant: 'destructive',
-        title: 'Bluetooth Not Ready',
-        description: 'Bluetooth client is not initialized. Please wait or try again.',
+        title: 'Bluetooth no está listo',
+        description: 'El cliente Bluetooth no está inicializado. Por favor, espera o inténtalo de nuevo.',
       });
       return;
     }
@@ -225,7 +224,7 @@ export default function HomeClient() {
                   const jsonData: SensorData = JSON.parse(message);
                   handleData(jsonData);
                 } catch (error) {
-                  console.error('Failed to parse JSON:', error, 'Message:', `"${message}"`);
+                  console.error('Fallo al parsear JSON:', error, 'Mensaje:', `"${message}"`);
                 }
               }
             });
@@ -235,12 +234,12 @@ export default function HomeClient() {
 
       setIsConnected(true);
       toast({
-        title: 'Connected!',
-        description: `Successfully connected to ${device.name || deviceName}.`,
+        title: '¡Conectado!',
+        description: `Conectado exitosamente a ${device.name || deviceName}.`,
       });
     } catch (error) {
-      console.error('Connection failed:', error);
-      toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message });
+      console.error('La conexión falló:', error);
+      toast({ variant: 'destructive', title: 'Conexión Fallida', description: (error as Error).message });
     } finally {
       setIsConnecting(false);
     }
@@ -250,10 +249,10 @@ export default function HomeClient() {
     if (connectedDeviceRef.current && bleClientRef.current) {
         try {
             await bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId);
-            // onDisconnected will be called by the listener set up during connect
+            // onDisconnected será llamado por el listener configurado en connect
         } catch(error) {
-            console.error("Failed to disconnect", error);
-            onDisconnected(); // Force state update on error
+            console.error("Fallo al desconectar", error);
+            onDisconnected(); // Forzar actualización de estado en caso de error
         }
     }
   };
@@ -262,7 +261,7 @@ export default function HomeClient() {
     setDeviceName(tempDeviceName);
     localStorage.setItem('bleDeviceName', tempDeviceName);
     setIsSettingsOpen(false);
-    toast({ title: 'Settings Saved', description: `Device name updated to ${tempDeviceName}.` });
+    toast({ title: 'Ajustes Guardados', description: `Nombre del dispositivo actualizado a ${tempDeviceName}.` });
   };
   
   const getSensorStatus = (
@@ -279,7 +278,7 @@ export default function HomeClient() {
   const tempStatus = getSensorStatus(sensorData.temp, 15, 30, 18, 28);
   const satStatus = getSensorStatus(sensorData.do_sat, 80, 120, 90, 110);
   
-  // --- Render Logic ---
+  // --- Lógica de Renderizado ---
 
   if (!isConnected) {
     return (
@@ -372,16 +371,16 @@ export default function HomeClient() {
       
       <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Bluetooth Settings</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Ajustes de Bluetooth</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="device-name" className="text-right">Device Name</Label>
+              <Label htmlFor="device-name" className="text-right">Nombre del Dispositivo</Label>
               <Input id="device-name" value={tempDeviceName} onChange={(e) => setTempDeviceName(e.target.value)} className="col-span-3"/>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsSettingsOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveSettings}>Save Changes</Button>
+            <Button variant="outline" onClick={() => setIsSettingsOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveSettings}>Guardar Cambios</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
