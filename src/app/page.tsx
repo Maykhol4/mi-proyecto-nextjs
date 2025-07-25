@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, type FC } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Droplets,
@@ -17,7 +17,6 @@ import {
   Bluetooth,
   TrendingUp,
   BluetoothConnected,
-  BluetoothSearching,
   Minus,
   IterationCw,
 } from 'lucide-react';
@@ -277,9 +276,9 @@ export default function Home() {
             <CardTitle className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
               AQUADATA 2.0
             </CardTitle>
-            <p className="text-muted-foreground mt-2 leading-relaxed">
+            <CardDescription className="text-muted-foreground mt-2 leading-relaxed">
               Sistema Avanzado de Monitoreo de Calidad del Agua
-            </p>
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="text-center space-y-4">
@@ -456,5 +455,3 @@ export default function Home() {
     </div>
   );
 }
-
-    
