@@ -128,25 +128,25 @@ export default function HomeClient() {
   const BleClientRef = useRef<any>(null);
 
   useEffect(() => {
-    async function initializeBle() {
-      if (typeof window !== 'undefined' && !BleClientRef.current) {
-         try {
-            const { BleClient } = await import('@capacitor-community/bluetooth-le');
-            BleClientRef.current = BleClient;
-            await BleClient.initialize({ androidNeverForLocation: true });
-            setIsBleInitialized(true);
-          } catch (error) {
-             console.error('Error initializing BleClient', error);
-             toast({
-              variant: 'destructive',
-              title: 'BLE Error',
-              description: 'Could not initialize Bluetooth LE client. Please ensure Bluetooth is enabled and permissions are granted.',
-            });
-          }
+    const initializeBle = async () => {
+      try {
+        const { BleClient } = await import('@capacitor-community/bluetooth-le');
+        await BleClient.initialize({ androidNeverForLocation: true });
+        BleClientRef.current = BleClient;
+        setIsBleInitialized(true);
+      } catch (error) {
+        console.error('Error initializing BleClient', error);
+        toast({
+          variant: 'destructive',
+          title: 'BLE Error',
+          description: 'Could not initialize Bluetooth LE client. Please ensure Bluetooth is enabled and permissions are granted.',
+        });
       }
-    }
+    };
     
-    initializeBle();
+    if (typeof window !== 'undefined') {
+        initializeBle();
+    }
 
     const savedName = localStorage.getItem('bleDeviceName');
     if (savedName) {
@@ -155,12 +155,9 @@ export default function HomeClient() {
     }
   }, [toast]);
 
-  const handleData = useCallback(
-    (data: SensorData) => {
-      setSensorData(data);
-    },
-    []
-  );
+  const handleData = useCallback((data: SensorData) => {
+    setSensorData(data);
+  }, []);
   
   const onDisconnected = useCallback(() => {
     bleDevice.current = null;
