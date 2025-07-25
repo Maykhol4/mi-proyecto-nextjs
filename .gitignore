@@ -46,3 +46,10 @@ firestore-debug.logmi-proyecto-limpio.tar.gz
 mi-proyecto-nextjs.zip
 *.zip
 *.tar.gz
+*.zip
+*.tar.gz
+*.rar
+node_modules/
+.next/
+build/
+dist/
