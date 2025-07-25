@@ -5,8 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
-  Wifi,
-  WifiOff,
   Droplets,
   Thermometer,
   TestTube,
@@ -21,20 +19,14 @@ import {
   BluetoothConnected,
   BluetoothSearching,
   Minus,
-  FlaskConical,
-  Wind,
-  Gauge,
   IterationCw,
-  Clock,
 } from 'lucide-react';
 import { BleClient, type BleDevice } from '@capacitor-community/bluetooth-le';
 
 import { useToast } from '@/hooks/use-toast';
-import { AquaViewLogo } from '@/components/icons';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const UART_TX_CHARACTERISTIC_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
@@ -464,3 +456,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
