@@ -25,7 +25,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 
-// --- Type definitions para evitar cualquier importación del paquete BLE ---
+// --- Interfaces locales para evitar importaciones del lado del servidor ---
 // Esto es crucial para prevenir el "Internal Server Error" en Next.js.
 interface BleDevice {
   deviceId: string;
@@ -145,11 +145,11 @@ export default function HomeClient() {
           await BleClient.initialize({ androidNeverForLocation: true });
           setIsBleInitialized(true);
         } catch (error) {
-          console.error('Error inicializando BleClient', error);
+          console.error('Error inicializando BleClient. Esto es esperado en un navegador web de escritorio.', error);
           toast({
             variant: 'destructive',
             title: 'Error de BLE',
-            description: 'No se pudo inicializar Bluetooth. Asegúrate de que esté activado y los permisos concedidos.',
+            description: 'No se pudo inicializar Bluetooth. Asegúrate de que la app se ejecuta en un dispositivo móvil con Bluetooth activado.',
           });
         }
       }
@@ -187,7 +187,7 @@ export default function HomeClient() {
       toast({
         variant: 'destructive',
         title: 'Bluetooth no está listo',
-        description: 'El cliente Bluetooth no está inicializado. Por favor, espera o inténtalo de nuevo.',
+        description: 'El cliente Bluetooth no está inicializado. Esto es normal en un navegador de escritorio. Por favor, inténtalo desde la app móvil.',
       });
       return;
     }
@@ -239,7 +239,7 @@ export default function HomeClient() {
       });
     } catch (error) {
       console.error('La conexión falló:', error);
-      toast({ variant: 'destructive', title: 'Conexión Fallida', description: (error as Error).message });
+      toast({ variant: 'destructive', title: 'Conexión Fallida', description: 'No se pudo encontrar o conectar al dispositivo. Asegúrate de que esté encendido y cerca.' });
     } finally {
       setIsConnecting(false);
     }
