@@ -30,8 +30,6 @@ import {
 import { BleClient, type BleDevice } from '@capacitor-community/bluetooth-le';
 
 import { useToast } from '@/hooks/use-toast';
-import { runAnomalyDetection } from './actions';
-import type { DetectAnomaliesOutput } from '@/ai/flows/detect-anomalies';
 import { AquaViewLogo } from '@/components/icons';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -126,7 +124,6 @@ const SensorCard: FC<{
 export default function Home() {
   const { toast } = useToast();
   const [sensorData, setSensorData] = useState<SensorData>(initialSensorData);
-  const [anomalyResult, setAnomalyResult] = useState<DetectAnomaliesOutput | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -160,19 +157,8 @@ export default function Home() {
   const handleData = useCallback(
     async (data: SensorData) => {
       setSensorData(data);
-      try {
-        const result = await runAnomalyDetection(data);
-        setAnomalyResult(result);
-      } catch (error) {
-        console.error('Anomaly detection failed:', error);
-        toast({
-          variant: 'destructive',
-          title: 'AI Error',
-          description: 'Failed to run anomaly detection.',
-        });
-      }
     },
-    [toast]
+    []
   );
   
   const onDisconnected = useCallback(() => {
@@ -180,7 +166,6 @@ export default function Home() {
     setIsConnected(false);
     setIsConnecting(false);
     setSensorData(initialSensorData);
-    setAnomalyResult(null);
     toast({
       title: 'Disconnected',
       description: 'Bluetooth device has been disconnected.',
@@ -417,32 +402,6 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        {anomalyResult && (
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-6 w-6 text-primary" />
-                Reporte de Anomalías IA
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {anomalyResult.isAnomaly ? (
-                <Alert variant="destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>¡Anomalía Detectada!</AlertTitle>
-                  <AlertDescription>{anomalyResult.anomalyDescription}</AlertDescription>
-                </Alert>
-              ) : (
-                <Alert>
-                  <CheckCircle className="h-4 w-4" />
-                  <AlertTitle>Todos los Sistemas Normales</AlertTitle>
-                  <AlertDescription>No se detectaron anomalías en las últimas lecturas de sensores. La calidad del agua es estable.</AlertDescription>
-                </Alert>
-              )}
-            </CardContent>
-          </Card>
-        )}
-        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <SensorCard icon={<TestTube className="w-5 h-5 text-blue-600" />} title="pH del Agua" value={sensorData.ph} unit="" description="Unidades de pH (6.5-8.5 óptimo)" status={phStatus} />
             <SensorCard icon={<Droplets className="w-5 h-5 text-cyan-600" />} title="Oxígeno Disuelto" value={sensorData.do_conc} unit="mg/L" description=">6.0 óptimo" status={doStatus} />
