@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, type FC } from 'react';
@@ -20,7 +21,7 @@ import {
   Minus,
   IterationCw,
 } from 'lucide-react';
-import { BleClient, type BleDevice } from '@capacitor-community/bluetooth-le';
+import type { BleDevice } from '@capacitor-community/bluetooth-le';
 
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -124,33 +125,34 @@ export default function HomeClient() {
 
   const bleDevice = useRef<BleDevice | null>(null);
   const receivedDataBuffer = useRef('');
+  const BleClientRef = useRef<any>(null);
 
   useEffect(() => {
+    async function initializeBle() {
+      if (typeof window !== 'undefined' && !BleClientRef.current) {
+         try {
+            const { BleClient } = await import('@capacitor-community/bluetooth-le');
+            BleClientRef.current = BleClient;
+            await BleClient.initialize({ androidNeverForLocation: true });
+            setIsBleInitialized(true);
+          } catch (error) {
+             console.error('Error initializing BleClient', error);
+             toast({
+              variant: 'destructive',
+              title: 'BLE Error',
+              description: 'Could not initialize Bluetooth LE client. Please ensure Bluetooth is enabled and permissions are granted.',
+            });
+          }
+      }
+    }
+    
+    initializeBle();
+
     const savedName = localStorage.getItem('bleDeviceName');
     if (savedName) {
       setDeviceName(savedName);
       setTempDeviceName(savedName);
     }
-    
-    async function initializeBle() {
-      try {
-        await BleClient.initialize({ androidNeverForLocation: true });
-        setIsBleInitialized(true);
-      } catch (error) {
-         console.error('Error initializing BleClient', error);
-         toast({
-          variant: 'destructive',
-          title: 'BLE Error',
-          description: 'Could not initialize Bluetooth LE client. Please ensure Bluetooth is enabled and permissions are granted.',
-        });
-      }
-    }
-
-    // Only run on client-side
-    if (typeof window !== 'undefined') {
-      initializeBle();
-    }
-
   }, [toast]);
 
   const handleData = useCallback(
@@ -172,7 +174,7 @@ export default function HomeClient() {
   }, [toast]);
 
   const handleConnect = async () => {
-    if (!isBleInitialized) {
+    if (!isBleInitialized || !BleClientRef.current) {
       toast({
         variant: 'destructive',
         title: 'Bluetooth Not Ready',
@@ -181,6 +183,7 @@ export default function HomeClient() {
       return;
     }
     
+    const BleClient = BleClientRef.current;
     setIsConnecting(true);
     try {
       const device = await BleClient.requestDevice({
@@ -190,7 +193,7 @@ export default function HomeClient() {
       
       bleDevice.current = device;
       
-      await BleClient.connect(device.deviceId, (deviceId) => onDisconnected());
+      await BleClient.connect(device.deviceId, onDisconnected);
       
       const decoder = new TextDecoder();
       
@@ -237,7 +240,8 @@ export default function HomeClient() {
   };
 
   const handleDisconnect = async () => {
-    if (bleDevice.current) {
+    const BleClient = BleClientRef.current;
+    if (bleDevice.current && BleClient) {
         try {
             await BleClient.disconnect(bleDevice.current.deviceId);
         } catch(error) {
@@ -472,3 +476,5 @@ export default function HomeClient() {
     </div>
   );
 }
+
+    
