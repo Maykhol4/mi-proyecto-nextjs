@@ -155,7 +155,7 @@ export default function Home() {
   }, [toast]);
 
   const handleData = useCallback(
-    async (data: SensorData) => {
+    (data: SensorData) => {
       setSensorData(data);
     },
     []
@@ -331,7 +331,7 @@ export default function Home() {
                 </div>
                 <div className="flex items-center space-x-1">
                   <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                  <span>Alertas IA</span>
+                  <span>Alertas Nativas</span>
                 </div>
               </div>
             </div>
