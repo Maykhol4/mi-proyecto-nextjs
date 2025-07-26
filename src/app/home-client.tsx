@@ -34,7 +34,7 @@ interface BleDevice {
 
 interface BleClient {
   initialize: (options?: { androidNeverForLocation: boolean }) => Promise<void>;
-  requestDevice: (options: { name?: string; services: string[]; optionalServices?: string[] }) => Promise<BleDevice>;
+  requestDevice: (options: { name?: string; services?: string[]; optionalServices?: string[] }) => Promise<BleDevice>;
   connect: (deviceId: string, onDisconnect?: (deviceId: string) => void) => Promise<void>;
   disconnect: (deviceId: string) => Promise<void>;
   startNotifications: (deviceId: string, service: string, characteristic: string, callback: (value: DataView) => void) => Promise<void>;
@@ -132,24 +132,24 @@ export default function HomeClient() {
   const bleClientRef = useRef<BleClient | null>(null);
   const connectedDeviceRef = useRef<BleDevice | null>(null);
   const receivedDataBuffer = useRef('');
-  
+
   // Efecto para inicialización segura y única de BLE
   useEffect(() => {
     const initializeBle = async () => {
       // Nos aseguramos de que esto solo se ejecute en el navegador
       if (typeof window !== 'undefined') {
         try {
-          // Importación dinámica para evitar que el servidor procese el paquete
+          // Importación dinámica para evitar el procesamiento en el servidor
           const { BleClient } = await import('@capacitor-community/bluetooth-le');
           bleClientRef.current = BleClient;
           await BleClient.initialize({ androidNeverForLocation: true });
           setIsBleInitialized(true);
         } catch (error) {
-          console.error('Error inicializando BleClient. Esto es esperado en un navegador web de escritorio.', error);
+          console.error('Error inicializando BleClient. Esto es esperado en un navegador web de escritorio sin soporte BLE.', error);
           toast({
             variant: 'destructive',
             title: 'Error de BLE',
-            description: 'No se pudo inicializar Bluetooth. Asegúrate de que la app se ejecuta en un dispositivo móvil con Bluetooth activado.',
+            description: 'No se pudo inicializar Bluetooth. Asegúrate de que la app se ejecuta en un dispositivo compatible con Bluetooth activado.',
           });
         }
       }
@@ -181,61 +181,55 @@ export default function HomeClient() {
     setSensorData(data);
   }, []);
 
+  const handleNotifications = (value: DataView) => {
+    const decoder = new TextDecoder();
+    receivedDataBuffer.current += decoder.decode(value);
+    const lastNewline = receivedDataBuffer.current.lastIndexOf('\n');
+    if (lastNewline !== -1) {
+      const completeMessages = receivedDataBuffer.current.substring(0, lastNewline);
+      receivedDataBuffer.current = receivedDataBuffer.current.substring(lastNewline + 1);
+
+      completeMessages.split('\n').forEach(message => {
+        if (message) {
+          try {
+            const jsonData: SensorData = JSON.parse(message);
+            handleData(jsonData);
+          } catch (error) {
+            console.error('Fallo al parsear JSON:', error, 'Mensaje:', `"${message}"`);
+          }
+        }
+      });
+    }
+  };
+
   // Lógica de conexión principal
   const handleConnect = async () => {
     if (!isBleInitialized || !bleClientRef.current) {
       toast({
         variant: 'destructive',
         title: 'Bluetooth no está listo',
-        description: 'El cliente Bluetooth no está inicializado. Esto es normal en un navegador de escritorio. Por favor, inténtalo desde la app móvil.',
+        description: 'El cliente Bluetooth no está inicializado. Por favor, inténtalo de nuevo.',
       });
       return;
     }
     
-    const BleClient = bleClientRef.current;
     setIsConnecting(true);
 
     try {
-      const device = await BleClient.requestDevice({
+      const device = await bleClientRef.current.requestDevice({
         name: deviceName,
         services: [UART_SERVICE_UUID],
       });
-      
       connectedDeviceRef.current = device;
-      
-      await BleClient.connect(device.deviceId, onDisconnected);
-      
-      const decoder = new TextDecoder();
-      
-      await BleClient.startNotifications(
-        device.deviceId,
-        UART_SERVICE_UUID,
-        UART_TX_CHARACTERISTIC_UUID,
-        (value: DataView) => {
-          receivedDataBuffer.current += decoder.decode(value);
-          const lastNewline = receivedDataBuffer.current.lastIndexOf('\n');
-          if (lastNewline !== -1) {
-            const completeMessages = receivedDataBuffer.current.substring(0, lastNewline);
-            receivedDataBuffer.current = receivedDataBuffer.current.substring(lastNewline + 1);
-
-            completeMessages.split('\n').forEach(message => {
-              if (message) {
-                try {
-                  const jsonData: SensorData = JSON.parse(message);
-                  handleData(jsonData);
-                } catch (error) {
-                  console.error('Fallo al parsear JSON:', error, 'Mensaje:', `"${message}"`);
-                }
-              }
-            });
-          }
-        }
+      await bleClientRef.current.connect(device.deviceId, onDisconnected);
+      await bleClientRef.current.startNotifications(
+        device.deviceId, UART_SERVICE_UUID, UART_TX_CHARACTERISTIC_UUID, handleNotifications
       );
 
       setIsConnected(true);
       toast({
         title: '¡Conectado!',
-        description: `Conectado exitosamente a ${device.name || deviceName}.`,
+        description: `Conectado exitosamente a ${deviceName}.`,
       });
     } catch (error) {
       console.error('La conexión falló:', error);
@@ -246,14 +240,15 @@ export default function HomeClient() {
   };
 
   const handleDisconnect = async () => {
-    if (connectedDeviceRef.current && bleClientRef.current) {
+    if (bleClientRef.current && connectedDeviceRef.current) {
         try {
             await bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId);
-            // onDisconnected será llamado por el listener configurado en connect
         } catch(error) {
-            console.error("Fallo al desconectar", error);
-            onDisconnected(); // Forzar actualización de estado en caso de error
+            console.error("Fallo al desconectar (Capacitor)", error);
+            onDisconnected();
         }
+    } else {
+      onDisconnected();
     }
   };
 
