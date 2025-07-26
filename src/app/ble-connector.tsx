@@ -9,21 +9,22 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 
-// --- DEFINICIONES DE TIPO MANUALES PARA EVITAR IMPORTACIÓN EN SERVIDOR ---
-// Esto es crucial para prevenir el 'Internal Server Error'.
+// --- DEFINICIONES DE TIPO MANUALES ---
+// Esto evita la importación directa que causa errores en el servidor.
 interface BleDevice {
   deviceId: string;
   name?: string;
 }
 
-interface BleClient {
-  initialize: (options?: { androidNeverForLocation: boolean }) => Promise<void>;
-  requestDevice: (options: { name?: string; services?: string[]; optionalServices?: string[] }) => Promise<BleDevice>;
-  connect: (deviceId: string, onDisconnect?: (deviceId: string) => void) => Promise<void>;
+// Interfaz unificada para nuestro adaptador
+interface BluetoothAdapter {
+  initialize: () => Promise<void>;
+  requestDevice: (options: { name: string; services: string[] }) => Promise<BleDevice>;
+  connect: (deviceId: string, onDisconnect: () => void) => Promise<void>;
   disconnect: (deviceId: string) => Promise<void>;
   startNotifications: (deviceId: string, service: string, characteristic: string, callback: (value: DataView) => void) => Promise<void>;
-  stopNotifications: (deviceId: string, service: string, characteristic: string) => Promise<void>;
 }
+
 
 export interface SensorData {
   ph: number | null;
@@ -72,24 +73,41 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   const [deviceName, setDeviceName] = useState('AQUADATA-2.0');
   const [tempDeviceName, setTempDeviceName] = useState('AQUADATA-2.0');
 
-  const bleClientRef = useRef<BleClient | null>(null);
+  const adapterRef = useRef<BluetoothAdapter | null>(null);
   const connectedDeviceRef = useRef<BleDevice | null>(null);
   const receivedDataBuffer = useRef('');
 
-  // Efecto para inicializar BLE de forma segura solo en el cliente.
   useEffect(() => {
     const initializeBle = async () => {
-      // La comprobación `typeof window` asegura que este código nunca se ejecute en el servidor.
       if (typeof window !== 'undefined') {
         try {
-          // La importación dinámica está dentro del `useEffect` para aislarla del servidor.
-          const { BleClient } = await import('@capacitor-community/bluetooth-le');
-          bleClientRef.current = BleClient;
-          await bleClientRef.current.initialize({ androidNeverForLocation: true });
+          // Detección de entorno: Capacitor o Web
+          const { Capacitor } = await import('@capacitor/core');
+          if (Capacitor.isNativePlatform()) {
+            // Entorno Nativo (APK)
+            const { BleClient } = await import('@capacitor-community/bluetooth-le');
+            adapterRef.current = {
+              initialize: () => BleClient.initialize({ androidNeverForLocation: true }),
+              requestDevice: (opts) => BleClient.requestDevice({ name: opts.name, services: opts.services }),
+              connect: BleClient.connect,
+              disconnect: BleClient.disconnect,
+              startNotifications: BleClient.startNotifications,
+            };
+            toast({ title: 'Modo Nativo', description: 'Usando el plugin de Capacitor BLE.' });
+          } else {
+            // Entorno Web (Navegador)
+            if (navigator.bluetooth) {
+              adapterRef.current = createWebBluetoothAdapter();
+              toast({ title: 'Modo Web', description: 'Usando la Web Bluetooth API del navegador.' });
+            } else {
+               throw new Error('Bluetooth no es soportado en este navegador.');
+            }
+          }
+          await adapterRef.current.initialize();
           setIsBleInitialized(true);
         } catch (error) {
-          console.error('Error inicializando BleClient:', error);
-          // Opcional: Mostrar un toast si la inicialización falla (e.g., BT desactivado).
+          console.error('Error inicializando Bluetooth:', error);
+          toast({ variant: 'destructive', title: 'Error de Bluetooth', description: (error as Error).message });
         }
       }
     };
@@ -101,7 +119,7 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
       setDeviceName(savedName);
       setTempDeviceName(savedName);
     }
-  }, []); // El array vacío asegura que se ejecute solo una vez.
+  }, [toast]);
 
   const onDisconnected = useCallback(() => {
     connectedDeviceRef.current = null;
@@ -138,34 +156,27 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
       });
     }
   };
-
+  
   const handleConnect = async () => {
-    if (!isBleInitialized || !bleClientRef.current) {
-      toast({
-        variant: 'destructive',
-        title: 'Bluetooth no está listo',
-        description: 'El cliente Bluetooth no está inicializado. Por favor, inténtalo de nuevo.',
-      });
+    if (!adapterRef.current || !isBleInitialized) {
+      toast({ variant: 'destructive', title: 'Bluetooth no listo', description: 'El adaptador Bluetooth no se ha inicializado.' });
       return;
     }
     
     setIsConnecting(true);
     try {
-      const device = await bleClientRef.current.requestDevice({
+      const device = await adapterRef.current.requestDevice({
         name: deviceName,
         services: [UART_SERVICE_UUID],
       });
       connectedDeviceRef.current = device;
-      await bleClientRef.current.connect(device.deviceId, onDisconnected);
-      await bleClientRef.current.startNotifications(
+      await adapterRef.current.connect(device.deviceId, onDisconnected);
+      await adapterRef.current.startNotifications(
         device.deviceId, UART_SERVICE_UUID, UART_TX_CHARACTERISTIC_UUID, handleNotifications
       );
 
       setIsConnected(true);
-      toast({
-        title: '¡Conectado!',
-        description: `Conectado exitosamente a ${deviceName}.`,
-      });
+      toast({ title: '¡Conectado!', description: `Conectado exitosamente a ${deviceName}.` });
     } catch (error) {
       console.error('La conexión falló:', error);
       toast({ variant: 'destructive', title: 'Conexión Fallida', description: 'No se pudo encontrar o conectar al dispositivo.' });
@@ -175,16 +186,14 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   };
 
   const handleDisconnect = async () => {
-    if (bleClientRef.current && connectedDeviceRef.current) {
+    if (adapterRef.current && connectedDeviceRef.current) {
         try {
-            await bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId);
+            await adapterRef.current.disconnect(connectedDeviceRef.current.deviceId);
         } catch(error) {
-            console.error("Fallo al desconectar (Capacitor)", error);
-            onDisconnected();
+            console.error("Fallo al desconectar", error);
         }
-    } else {
-      onDisconnected();
     }
+    onDisconnected(); // Asegurarse de que el estado se limpie
   };
 
   const handleSaveSettings = () => {
@@ -194,7 +203,6 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
     toast({ title: 'Ajustes Guardados', description: `Nombre del dispositivo actualizado a ${tempDeviceName}.` });
   };
   
-  // Estados para los portales
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const [containerConnected, setContainerConnected] = useState<HTMLElement | null>(null);
 
@@ -248,3 +256,69 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
     </>
   );
 };
+
+
+// --- Adaptador para Web Bluetooth API ---
+function createWebBluetoothAdapter(): BluetoothAdapter {
+  let webDevice: BluetoothDevice | null = null;
+  let onDisconnectCallback: (() => void) | null = null;
+  
+  const handleGattServerDisconnected = () => {
+    webDevice = null;
+    if (onDisconnectCallback) {
+      onDisconnectCallback();
+    }
+  };
+
+  return {
+    initialize: async () => {
+      // No hay inicialización explícita para Web Bluetooth
+      Promise.resolve();
+    },
+    requestDevice: async (options) => {
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: options.name, services: options.services }],
+        optionalServices: options.services,
+      });
+      if (!device.name || !device.id) {
+        throw new Error("El dispositivo seleccionado no es válido.");
+      }
+      return { deviceId: device.id, name: device.name };
+    },
+    connect: async (deviceId, onDisconnect) => {
+      // En Web Bluetooth, el 'device' ya se obtuvo en 'requestDevice'.
+      // La conexión real ocurre al acceder al servidor GATT.
+      const devices = await navigator.bluetooth.getDevices();
+      webDevice = devices.find(d => d.id === deviceId) || null;
+
+      if (!webDevice || !webDevice.gatt) {
+        throw new Error("No se pudo obtener el dispositivo para la conexión GATT.");
+      }
+      
+      onDisconnectCallback = onDisconnect;
+      webDevice.addEventListener('gattserverdisconnected', handleGattServerDisconnected);
+      
+      await webDevice.gatt.connect();
+    },
+    disconnect: async (deviceId) => {
+      if (!webDevice || !webDevice.gatt || !webDevice.gatt.connected) return;
+      webDevice.gatt.disconnect();
+      webDevice.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
+      handleGattServerDisconnected(); // Forzar limpieza de estado
+    },
+    startNotifications: async (deviceId, serviceUUID, characteristicUUID, callback) => {
+       if (!webDevice || !webDevice.gatt || !webDevice.gatt.connected) {
+         throw new Error("Servidor GATT no conectado.");
+       }
+       const service = await webDevice.gatt.getPrimaryService(serviceUUID);
+       const characteristic = await service.getCharacteristic(characteristicUUID);
+       characteristic.addEventListener('characteristicvaluechanged', (event) => {
+         const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
+         if (value) {
+            callback(value);
+         }
+       });
+       await characteristic.startNotifications();
+    },
+  };
+}
