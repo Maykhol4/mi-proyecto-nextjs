@@ -1,4 +1,6 @@
-import dynamic from 'next/dynamic'
+'use client';
+
+import dynamic from 'next/dynamic';
 
 // Al cargar home-client de forma dinámica con ssr:false,
 // aseguramos que nada de su contenido (incluyendo sus importaciones)
@@ -10,8 +12,8 @@ const HomeClient = dynamic(() => import('./home-client'), {
       <p className="text-gray-500">Cargando aplicación...</p>
     </div>
   ),
-})
+});
 
 export default function Home() {
-  return <HomeClient />
+  return <HomeClient />;
 }
