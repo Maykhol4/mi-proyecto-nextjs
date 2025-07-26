@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, type FC } from 'react';
+import React, { useState, type FC } from 'react';
+import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +11,6 @@ import {
   TestTube,
   Activity,
   Settings,
-  RefreshCw,
   AlertTriangle,
   CheckCircle,
   XCircle,
@@ -20,56 +20,17 @@ import {
   Minus,
   IterationCw,
 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import type { SensorData } from './ble-connector';
+import { initialSensorData } from './ble-connector';
 
-// --- Interfaces locales para evitar importaciones del lado del servidor ---
-// Esto es crucial para prevenir el "Internal Server Error" en Next.js.
-interface BleDevice {
-  deviceId: string;
-  name?: string;
-}
+// Carga dinámica del conector BLE. Este es el paso CRÍTICO.
+// `ssr: false` asegura que este componente NUNCA se ejecute en el servidor.
+const BleConnector = dynamic(() => import('./ble-connector').then(mod => mod.BleConnector), {
+  ssr: false,
+  loading: () => <Button disabled className="w-full h-12">Cargando Módulo Bluetooth...</Button>,
+});
 
-interface BleClient {
-  initialize: (options?: { androidNeverForLocation: boolean }) => Promise<void>;
-  requestDevice: (options: { name?: string; services?: string[]; optionalServices?: string[] }) => Promise<BleDevice>;
-  connect: (deviceId: string, onDisconnect?: (deviceId: string) => void) => Promise<void>;
-  disconnect: (deviceId: string) => Promise<void>;
-  startNotifications: (deviceId: string, service: string, characteristic: string, callback: (value: DataView) => void) => Promise<void>;
-  stopNotifications: (deviceId: string, service: string, characteristic: string) => Promise<void>;
-}
-
-// --- Estructura de datos del sensor ---
-interface SensorData {
-  ph: number | null;
-  do_conc: number | null;
-  do_sat: number | null;
-  temp: number | null;
-  timestamp: string;
-  status: '🟢' | '🟡' | '🔴' | string;
-  readings_count: { ph: number; do: number };
-  errors_count: { ph: number; do: number };
-  simulation_cycle: number;
-}
-
-const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-const UART_TX_CHARACTERISTIC_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
-
-const initialSensorData: SensorData = {
-  ph: null,
-  do_conc: null,
-  do_sat: null,
-  temp: null,
-  timestamp: '--:--:--',
-  status: '⚪',
-  readings_count: { ph: 0, do: 0 },
-  errors_count: { ph: 0, do: 0 },
-  simulation_cycle: 0,
-};
-
-// --- Componente de tarjeta de sensor reutilizable ---
+// --- Reusable Components ---
 const SensorCard: FC<{
   icon: React.ReactNode;
   title: string;
@@ -115,149 +76,11 @@ const SensorCard: FC<{
   );
 };
 
-// --- Componente principal del cliente ---
+
+// --- Main UI Component ---
 export default function HomeClient() {
-  const { toast } = useToast();
-  
-  // Gestión de estado
   const [sensorData, setSensorData] = useState<SensorData>(initialSensorData);
-  const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [deviceName, setDeviceName] = useState('AQUADATA-2.0');
-  const [tempDeviceName, setTempDeviceName] = useState('AQUADATA-2.0');
-  const [isBleInitialized, setIsBleInitialized] = useState(false);
-
-  // Referencias para instancias estables
-  const bleClientRef = useRef<BleClient | null>(null);
-  const connectedDeviceRef = useRef<BleDevice | null>(null);
-  const receivedDataBuffer = useRef('');
-
-  // Efecto para inicialización segura y única de BLE
-  useEffect(() => {
-    const initializeBle = async () => {
-      // Nos aseguramos de que esto solo se ejecute en el navegador
-      if (typeof window !== 'undefined') {
-        try {
-          // Importación dinámica para evitar el procesamiento en el servidor
-          const { BleClient } = await import('@capacitor-community/bluetooth-le');
-          bleClientRef.current = BleClient;
-          await BleClient.initialize({ androidNeverForLocation: true });
-          setIsBleInitialized(true);
-        } catch (error) {
-          console.error('Error inicializando BleClient. Esto es esperado en un navegador web de escritorio sin soporte BLE.', error);
-          toast({
-            variant: 'destructive',
-            title: 'Error de BLE',
-            description: 'No se pudo inicializar Bluetooth. Asegúrate de que la app se ejecuta en un dispositivo compatible con Bluetooth activado.',
-          });
-        }
-      }
-    };
-    
-    initializeBle();
-
-    const savedName = localStorage.getItem('bleDeviceName');
-    if (savedName) {
-      setDeviceName(savedName);
-      setTempDeviceName(savedName);
-    }
-  }, [toast]);
-
-  // Callback para manejar eventos de desconexión
-  const onDisconnected = useCallback(() => {
-    connectedDeviceRef.current = null;
-    setIsConnected(false);
-    setIsConnecting(false);
-    setSensorData(initialSensorData);
-    toast({
-      title: 'Desconectado',
-      description: 'El dispositivo Bluetooth ha sido desconectado.',
-    });
-  }, [toast]);
-
-  // Callback para procesar datos entrantes
-  const handleData = useCallback((data: SensorData) => {
-    setSensorData(data);
-  }, []);
-
-  const handleNotifications = (value: DataView) => {
-    const decoder = new TextDecoder();
-    receivedDataBuffer.current += decoder.decode(value);
-    const lastNewline = receivedDataBuffer.current.lastIndexOf('\n');
-    if (lastNewline !== -1) {
-      const completeMessages = receivedDataBuffer.current.substring(0, lastNewline);
-      receivedDataBuffer.current = receivedDataBuffer.current.substring(lastNewline + 1);
-
-      completeMessages.split('\n').forEach(message => {
-        if (message) {
-          try {
-            const jsonData: SensorData = JSON.parse(message);
-            handleData(jsonData);
-          } catch (error) {
-            console.error('Fallo al parsear JSON:', error, 'Mensaje:', `"${message}"`);
-          }
-        }
-      });
-    }
-  };
-
-  // Lógica de conexión principal
-  const handleConnect = async () => {
-    if (!isBleInitialized || !bleClientRef.current) {
-      toast({
-        variant: 'destructive',
-        title: 'Bluetooth no está listo',
-        description: 'El cliente Bluetooth no está inicializado. Por favor, inténtalo de nuevo.',
-      });
-      return;
-    }
-    
-    setIsConnecting(true);
-
-    try {
-      const device = await bleClientRef.current.requestDevice({
-        name: deviceName,
-        services: [UART_SERVICE_UUID],
-      });
-      connectedDeviceRef.current = device;
-      await bleClientRef.current.connect(device.deviceId, onDisconnected);
-      await bleClientRef.current.startNotifications(
-        device.deviceId, UART_SERVICE_UUID, UART_TX_CHARACTERISTIC_UUID, handleNotifications
-      );
-
-      setIsConnected(true);
-      toast({
-        title: '¡Conectado!',
-        description: `Conectado exitosamente a ${deviceName}.`,
-      });
-    } catch (error) {
-      console.error('La conexión falló:', error);
-      toast({ variant: 'destructive', title: 'Conexión Fallida', description: 'No se pudo encontrar o conectar al dispositivo. Asegúrate de que esté encendido y cerca.' });
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    if (bleClientRef.current && connectedDeviceRef.current) {
-        try {
-            await bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId);
-        } catch(error) {
-            console.error("Fallo al desconectar (Capacitor)", error);
-            onDisconnected();
-        }
-    } else {
-      onDisconnected();
-    }
-  };
-
-  const handleSaveSettings = () => {
-    setDeviceName(tempDeviceName);
-    localStorage.setItem('bleDeviceName', tempDeviceName);
-    setIsSettingsOpen(false);
-    toast({ title: 'Ajustes Guardados', description: `Nombre del dispositivo actualizado a ${tempDeviceName}.` });
-  };
   
   const getSensorStatus = (
     value: number | null, criticalMin?: number, criticalMax?: number, warningMin?: number, warningMax?: number
@@ -273,41 +96,6 @@ export default function HomeClient() {
   const tempStatus = getSensorStatus(sensorData.temp, 15, 30, 18, 28);
   const satStatus = getSensorStatus(sensorData.do_sat, 80, 120, 90, 110);
   
-  // --- Lógica de Renderizado ---
-
-  if (!isConnected) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-blue-800 flex items-center justify-center p-4">
-        <div className="absolute inset-0 opacity-30" style={{ backgroundImage: "url('data:image/svg+xml,%3Csvg width=\"60\" height=\"60\" viewBox=\"0 0 60 60\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"none\" fill-rule=\"evenodd\"%3E%3Cg fill=\"%23ffffff\" fill-opacity=\"0.05\"%3E%3Cpath d=\"M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')" }}></div>
-        <Card className="w-full max-w-md mx-auto bg-white/95 backdrop-blur-sm shadow-2xl border-0">
-          <CardHeader className="text-center pb-8">
-            <div className="mx-auto mb-6 w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-full flex items-center justify-center shadow-lg"><Droplets className="w-10 h-10 text-white" /></div>
-            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">AQUADATA 2.0</CardTitle>
-            <CardDescription className="text-muted-foreground mt-2 leading-relaxed">Sistema Avanzado de Monitoreo de Calidad del Agua</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="text-center space-y-4">
-              <div className="flex items-center justify-center space-x-2 text-muted-foreground"><Bluetooth className="w-5 h-5" /><span>Conéctese a su dispositivo {deviceName}</span></div>
-              <Button onClick={handleConnect} disabled={isConnecting || !isBleInitialized} className="w-full h-12 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105">
-                {isConnecting ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />Conectando...</> : <><Bluetooth className="w-5 h-5 mr-2" />Conectar a {deviceName}</>}
-              </Button>
-              <div className="text-sm text-muted-foreground flex items-center justify-center space-x-1">
-                <span>¿Nombre incorrecto?</span><button onClick={() => setIsSettingsOpen(true)} className="text-blue-600 hover:text-blue-700 underline">Cambiar en configuración</button>
-              </div>
-            </div>
-            <div className="border-t pt-4">
-              <div className="flex items-center justify-center space-x-4 text-sm text-muted-foreground">
-                <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-green-500 rounded-full"></div><span>Tiempo Real</span></div>
-                <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-blue-500 rounded-full"></div><span>Múltiples Sensores</span></div>
-                <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-purple-500 rounded-full"></div><span>Alertas Nativas</span></div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   const getStatusColor = (status: string) => {
     if (status.includes('🟢')) return 'border-l-green-500';
     if (status.includes('🟡')) return 'border-l-yellow-500';
@@ -316,69 +104,89 @@ export default function HomeClient() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      <header className="bg-white shadow-sm border-b sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-lg flex items-center justify-center"><Droplets className="w-6 h-6 text-white" /></div>
-              <div><h1 className="text-xl font-bold text-gray-900">AQUADATA 2.0</h1><p className="text-sm text-muted-foreground">Monitor Web</p></div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <Badge variant={isConnected ? 'default' : 'destructive'} className="flex items-center space-x-1">{isConnected ? <BluetoothConnected className="w-3 h-3" /> : <Bluetooth className="w-3 h-3" />}<span>{isConnected ? 'Conectado' : 'Desconectado'}</span></Badge>
-              <Button variant="outline" size="icon" onClick={() => setIsSettingsOpen(true)}><Settings className="w-4 h-4" /><span className="sr-only">Configuración</span></Button>
-              <Button onClick={handleDisconnect} variant="destructive" size="sm">Desconectar</Button>
-            </div>
-          </div>
+    <>
+      {/* El BleConnector está aislado y solo se carga en el cliente.
+          Maneja toda la lógica de BT y se comunica mediante props. */}
+      <BleConnector
+        setSensorData={setSensorData}
+        setIsConnected={setIsConnected}
+        setInitialSensorData={() => setSensorData(initialSensorData)}
+      />
+
+      {!isConnected ? (
+        // --- Disconnected State UI ---
+        <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-blue-800 flex items-center justify-center p-4">
+          <div className="absolute inset-0 opacity-30" style={{ backgroundImage: "url('data:image/svg+xml,%3Csvg width=\"60\" height=\"60\" viewBox=\"0 0 60 60\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"none\" fill-rule=\"evenodd\"%3E%3Cg fill=\"%23ffffff\" fill-opacity=\"0.05\"%3E%3Cpath d=\"M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')" }}></div>
+          <Card className="w-full max-w-md mx-auto bg-white/95 backdrop-blur-sm shadow-2xl border-0">
+            <CardHeader className="text-center pb-8">
+              <div className="mx-auto mb-6 w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-full flex items-center justify-center shadow-lg"><Droplets className="w-10 h-10 text-white" /></div>
+              <CardTitle className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">AQUADATA 2.0</CardTitle>
+              <CardDescription className="text-muted-foreground mt-2 leading-relaxed">Sistema Avanzado de Monitoreo de Calidad del Agua</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                {/* El BleConnector renderizará aquí sus botones usando un Portal. */}
+                <div id="ble-actions-container" className="text-center space-y-4"></div>
+                <div className="border-t pt-4">
+                    <div className="flex items-center justify-center space-x-4 text-sm text-muted-foreground">
+                        <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-green-500 rounded-full"></div><span>Tiempo Real</span></div>
+                        <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-blue-500 rounded-full"></div><span>Múltiples Sensores</span></div>
+                        <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-purple-500 rounded-full"></div><span>Alertas Nativas</span></div>
+                    </div>
+                </div>
+            </CardContent>
+          </Card>
         </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Card className={`mb-8 border-l-4 ${getStatusColor(sensorData.status)}`}>
-          <CardContent className="p-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center space-x-2"><CheckCircle className="w-5 h-5 text-green-500" /><span className="font-semibold">Estado:</span><span className="text-green-600">{sensorData.status}</span></div>
-              <div className="flex items-center space-x-2"><Activity className="w-5 h-5 text-primary" /><span className="font-semibold">Última lectura:</span><span className="text-primary">{sensorData.timestamp}</span></div>
-              <div className="flex items-center space-x-2"><IterationCw className="w-5 h-5 text-primary" /><span className="font-semibold">Ciclo de simulación:</span><span className="text-primary">#{sensorData.simulation_cycle}</span></div>
+      ) : (
+        // --- Connected State UI ---
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+          <header className="bg-white shadow-sm border-b sticky top-0 z-40">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex justify-between items-center h-16">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-lg flex items-center justify-center"><Droplets className="w-6 h-6 text-white" /></div>
+                  <div><h1 className="text-xl font-bold text-gray-900">AQUADATA 2.0</h1><p className="text-sm text-muted-foreground">Monitor Web</p></div>
+                </div>
+                <div className="flex items-center space-x-4">
+                  <Badge variant={isConnected ? 'default' : 'destructive'} className="flex items-center space-x-1">{isConnected ? <BluetoothConnected className="w-3 h-3" /> : <Bluetooth className="w-3 h-3" />}<span>{isConnected ? 'Conectado' : 'Desconectado'}</span></Badge>
+                  {/* El BleConnector renderizará aquí sus botones usando un Portal. */}
+                  <div id="ble-actions-container-connected" className="flex items-center space-x-2"></div>
+                </div>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <SensorCard icon={<TestTube className="w-5 h-5 text-blue-600" />} title="pH del Agua" value={sensorData.ph} unit="" description="Unidades de pH (6.5-8.5 óptimo)" status={phStatus} />
-            <SensorCard icon={<Droplets className="w-5 h-5 text-cyan-600" />} title="Oxígeno Disuelto" value={sensorData.do_conc} unit="mg/L" description=">6.0 óptimo" status={doStatus} />
-            <SensorCard icon={<TrendingUp className="w-5 h-5 text-purple-600" />} title="Saturación O₂" value={sensorData.do_sat} unit="%" description="80-120% óptimo" status={satStatus} />
-            <SensorCard icon={<Thermometer className="w-5 h-5 text-orange-600" />} title="Temperatura" value={sensorData.temp} unit="°C" description="18-28°C óptimo" status={tempStatus} />
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <Card className={`mb-8 border-l-4 ${getStatusColor(sensorData.status)}`}>
+              <CardContent className="p-6">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center space-x-2"><CheckCircle className="w-5 h-5 text-green-500" /><span className="font-semibold">Estado:</span><span className="text-green-600">{sensorData.status}</span></div>
+                  <div className="flex items-center space-x-2"><Activity className="w-5 h-5 text-primary" /><span className="font-semibold">Última lectura:</span><span className="text-primary">{sensorData.timestamp}</span></div>
+                  <div className="flex items-center space-x-2"><IterationCw className="w-5 h-5 text-primary" /><span className="font-semibold">Ciclo de simulación:</span><span className="text-primary">#{sensorData.simulation_cycle}</span></div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <SensorCard icon={<TestTube className="w-5 h-5 text-blue-600" />} title="pH del Agua" value={sensorData.ph} unit="" description="Unidades de pH (6.5-8.5 óptimo)" status={phStatus} />
+                <SensorCard icon={<Droplets className="w-5 h-5 text-cyan-600" />} title="Oxígeno Disuelto" value={sensorData.do_conc} unit="mg/L" description=">6.0 óptimo" status={doStatus} />
+                <SensorCard icon={<TrendingUp className="w-5 h-5 text-purple-600" />} title="Saturación O₂" value={sensorData.do_sat} unit="%" description="80-120% óptimo" status={satStatus} />
+                <SensorCard icon={<Thermometer className="w-5 h-5 text-orange-600" />} title="Temperatura" value={sensorData.temp} unit="°C" description="18-28°C óptimo" status={tempStatus} />
+            </div>
+
+            <Card>
+              <CardHeader><CardTitle className="flex items-center space-x-2"><TrendingUp className="w-5 h-5" /><span>Estadísticas del Dispositivo</span></CardTitle></CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="text-center p-4 bg-blue-50 rounded-lg"><div className="text-2xl font-bold text-blue-600">{sensorData.readings_count.ph}</div><div className="text-sm text-muted-foreground mt-1">Lecturas pH exitosas</div></div>
+                  <div className="text-center p-4 bg-cyan-50 rounded-lg"><div className="text-2xl font-bold text-cyan-600">{sensorData.readings_count.do}</div><div className="text-sm text-muted-foreground mt-1">Lecturas DO exitosas</div></div>
+                  <div className="text-center p-4 bg-red-50 rounded-lg"><div className="text-2xl font-bold text-red-600">{sensorData.errors_count.ph}</div><div className="text-sm text-muted-foreground mt-1">Errores pH</div></div>
+                  <div className="text-center p-4 bg-orange-50 rounded-lg"><div className="text-2xl font-bold text-orange-600">{sensorData.errors_count.do}</div><div className="text-sm text-muted-foreground mt-1">Errores DO</div></div>
+                </div>
+              </CardContent>
+            </Card>
+          </main>
         </div>
-
-        <Card>
-          <CardHeader><CardTitle className="flex items-center space-x-2"><TrendingUp className="w-5 h-5" /><span>Estadísticas del Dispositivo</span></CardTitle></CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="text-center p-4 bg-blue-50 rounded-lg"><div className="text-2xl font-bold text-blue-600">{sensorData.readings_count.ph}</div><div className="text-sm text-muted-foreground mt-1">Lecturas pH exitosas</div></div>
-              <div className="text-center p-4 bg-cyan-50 rounded-lg"><div className="text-2xl font-bold text-cyan-600">{sensorData.readings_count.do}</div><div className="text-sm text-muted-foreground mt-1">Lecturas DO exitosas</div></div>
-              <div className="text-center p-4 bg-red-50 rounded-lg"><div className="text-2xl font-bold text-red-600">{sensorData.errors_count.ph}</div><div className="text-sm text-muted-foreground mt-1">Errores pH</div></div>
-              <div className="text-center p-4 bg-orange-50 rounded-lg"><div className="text-2xl font-bold text-orange-600">{sensorData.errors_count.do}</div><div className="text-sm text-muted-foreground mt-1">Errores DO</div></div>
-            </div>
-          </CardContent>
-        </Card>
-      </main>
-      
-      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Ajustes de Bluetooth</DialogTitle></DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="device-name" className="text-right">Nombre del Dispositivo</Label>
-              <Input id="device-name" value={tempDeviceName} onChange={(e) => setTempDeviceName(e.target.value)} className="col-span-3"/>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsSettingsOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSaveSettings}>Guardar Cambios</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+      )}
+    </>
   );
 }
