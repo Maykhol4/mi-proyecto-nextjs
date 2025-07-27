@@ -83,18 +83,21 @@ const CONNECTION_TIMEOUT_MS = 15000;
 export interface BleConnectorRef {
     handleDisconnect: () => Promise<void>;
     sendWifiConfig: (ssid: string, psk: string) => Promise<void>;
+    scanWifiNetworks: () => Promise<void>;
 }
 
 interface BleConnectorProps {
   setSensorData: (data: SensorData) => void;
   setIsConnected: (isConnected: boolean) => void;
   setInitialSensorData: () => void;
+  onWifiScanResult: (ssids: string[]) => void;
 }
 
 export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>(({
   setSensorData,
   setIsConnected,
-  setInitialSensorData
+  setInitialSensorData,
+  onWifiScanResult
 }, ref) => {
   const { toast } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
@@ -246,16 +249,26 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
         completeMessages.split('\n').forEach(message => {
           if (message.trim()) {
             try {
-              const jsonData: SensorData = JSON.parse(message);
-              // Podríamos recibir respuestas a comandos aquí, podríamos manejarlos
+              const jsonData = JSON.parse(message);
+              
               if (jsonData.type === 'wifi_config_response') {
                   toast({
                       title: 'Respuesta del Dispositivo',
                       description: jsonData.message,
                       variant: jsonData.status === 'success' ? 'default' : 'destructive'
                   });
+              } else if (jsonData.type === 'wifi_scan_response') {
+                  if (jsonData.status === 'success') {
+                      onWifiScanResult(jsonData.ssids || []);
+                  } else {
+                      toast({
+                          title: 'Error de Escaneo WiFi',
+                          description: jsonData.message || 'El dispositivo no pudo escanear redes.',
+                          variant: 'destructive'
+                      });
+                  }
               } else {
-                  handleData(jsonData);
+                  handleData(jsonData as SensorData);
               }
             } catch (parseError) {
               console.warn('Error parseando JSON:', parseError, 'Mensaje:', `"${message}"`);
@@ -266,7 +279,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     } catch (error) {
       console.error('Error procesando notificación BLE:', error);
     }
-  }, [handleData, toast]);
+  }, [handleData, toast, onWifiScanResult]);
 
   const stopScanning = useCallback(async () => {
     if (!isScanning || !bleClientRef.current?.stopLEScan) return;
@@ -460,18 +473,12 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       }
     }
   };
-
-  const sendWifiConfig = useCallback(async (ssid: string, psk: string) => {
+  
+  const sendCommand = useCallback(async (command: object) => {
     if (!bleClientRef.current || !connectedDeviceRef.current) {
       toast({ variant: 'destructive', title: 'Error', description: 'No hay un dispositivo conectado.' });
       return;
     }
-
-    const command = {
-      type: 'wifi_config',
-      ssid: ssid,
-      password: psk,
-    };
     
     try {
       const jsonCommand = JSON.stringify(command);
@@ -481,16 +488,27 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
           UART_RX_CHARACTERISTIC_UUID,
           jsonCommand
       );
-      toast({ title: 'Comando Enviado', description: 'Configuración WiFi enviada al dispositivo.' });
     } catch (error) {
-        console.error("Error enviando config wifi", error);
+        console.error("Error enviando comando", error);
         toast({ variant: 'destructive', title: 'Error de Envío', description: (error as Error).message });
     }
   }, [toast]);
 
+  const sendWifiConfig = useCallback(async (ssid: string, psk: string) => {
+    await sendCommand({ type: 'wifi_config', ssid: ssid, password: psk });
+    toast({ title: 'Comando Enviado', description: 'Configuración WiFi enviada al dispositivo.' });
+  }, [sendCommand, toast]);
+
+  const scanWifiNetworks = useCallback(async () => {
+    await sendCommand({ type: 'wifi_scan' });
+    toast({ title: 'Comando Enviado', description: 'Solicitando escaneo de redes WiFi al dispositivo.' });
+  }, [sendCommand, toast]);
+
+
   React.useImperativeHandle(ref, () => ({
       handleDisconnect,
-      sendWifiConfig
+      sendWifiConfig,
+      scanWifiNetworks
   }));
 
   const handleScanModalClose = async () => {

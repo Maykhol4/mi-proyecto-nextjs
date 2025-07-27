@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, type FC, useRef } from 'react';
+import React, { useState, type FC, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -23,6 +23,8 @@ import {
   Save,
   BluetoothOff,
   MoreVertical,
+  ChevronDown,
+  RefreshCw,
 } from 'lucide-react';
 import type { SensorData, BleConnectorRef } from './ble-connector';
 import { initialSensorData } from './ble-connector';
@@ -34,8 +36,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 import { useIsMobile } from '@/hooks/use-mobile';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 
 const BleConnector = dynamic(() => import('./ble-connector').then(mod => mod.BleConnector), {
@@ -94,7 +97,10 @@ const WifiConfigModal: FC<{
     isOpen: boolean;
     onClose: () => void;
     onSave: (ssid: string, psk: string) => void;
-}> = ({isOpen, onClose, onSave}) => {
+    onScan: () => void;
+    scanResults: string[];
+    isScanningWifi: boolean;
+}> = ({isOpen, onClose, onSave, onScan, scanResults, isScanningWifi}) => {
     const [ssid, setSsid] = useState('');
     const [password, setPassword] = useState('');
 
@@ -103,31 +109,64 @@ const WifiConfigModal: FC<{
         onClose();
     }
 
+    const handleSelectSsid = (selectedSsid: string) => {
+        setSsid(selectedSsid);
+    }
+
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent>
+            <DialogContent className="max-w-md">
                 <DialogHeader>
                     <DialogTitle className="flex items-center space-x-2">
                         <Wifi />
                         <span>Configurar WiFi del Dispositivo</span>
                     </DialogTitle>
                     <DialogDescription>
-                        Introduce las credenciales de la red WiFi a la que se conectará el dispositivo ESP32.
+                        Busca o introduce las credenciales de la red WiFi a la que se conectará el dispositivo ESP32.
                     </DialogDescription>
                 </DialogHeader>
-                <div className="py-4 space-y-4">
-                    <div>
+                
+                <div className="space-y-4 py-2">
+                    <div className="space-y-2">
                         <Label htmlFor="ssid">Nombre de Red (SSID)</Label>
                         <Input id="ssid" value={ssid} onChange={(e) => setSsid(e.target.value)} placeholder="Ej: MiRedWiFi" />
                     </div>
-                    <div>
+                    <div className="space-y-2">
                         <Label htmlFor="password">Contraseña</Label>
                         <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Introduce la contraseña" />
                     </div>
                 </div>
+
+                <div className="space-y-3">
+                    <Button variant="outline" onClick={onScan} disabled={isScanningWifi} className="w-full">
+                        {isScanningWifi ? (
+                            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                            <Search className="mr-2 h-4 w-4" />
+                        )}
+                        {isScanningWifi ? 'Buscando Redes...' : 'Buscar Redes WiFi'}
+                    </Button>
+
+                    {scanResults.length > 0 && (
+                        <ScrollArea className="h-32 w-full rounded-md border p-2">
+                            <div className="space-y-1">
+                            {scanResults.map((s, i) => (
+                                <button 
+                                    key={i} 
+                                    onClick={() => handleSelectSsid(s)}
+                                    className="w-full text-left p-2 rounded-md hover:bg-accent text-sm"
+                                >
+                                    {s}
+                                </button>
+                            ))}
+                            </div>
+                        </ScrollArea>
+                    )}
+                </div>
+
                 <DialogFooter>
                     <Button variant="outline" onClick={onClose}>Cancelar</Button>
-                    <Button onClick={handleSave} disabled={!ssid || !password}>
+                    <Button onClick={handleSave} disabled={!ssid}>
                         <Save className="mr-2 h-4 w-4" />
                         Guardar y Enviar
                     </Button>
@@ -142,6 +181,9 @@ export default function HomeClient() {
   const [sensorData, setSensorData] = useState<SensorData>(initialSensorData);
   const [isConnected, setIsConnected] = useState(false);
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
+  const [wifiScanResults, setWifiScanResults] = useState<string[]>([]);
+  const [isScanningWifi, setIsScanningWifi] = useState(false);
+  
   const bleConnectorRef = useRef<BleConnectorRef>(null);
   const isMobile = useIsMobile();
   
@@ -174,6 +216,19 @@ export default function HomeClient() {
       bleConnectorRef.current?.sendWifiConfig(ssid, psk);
   }
 
+  const handleScanWifi = () => {
+      if (bleConnectorRef.current) {
+          setIsScanningWifi(true);
+          setWifiScanResults([]);
+          bleConnectorRef.current.scanWifiNetworks();
+      }
+  };
+
+  const handleWifiScanResult = useCallback((ssids: string[]) => {
+      setIsScanningWifi(false);
+      setWifiScanResults(ssids);
+  }, []);
+
   return (
     <>
       <BleConnector
@@ -181,12 +236,16 @@ export default function HomeClient() {
         setSensorData={setSensorData}
         setIsConnected={setIsConnected}
         setInitialSensorData={() => setSensorData(initialSensorData)}
+        onWifiScanResult={handleWifiScanResult}
       />
 
       <WifiConfigModal 
         isOpen={isWifiModalOpen}
         onClose={() => setIsWifiModalOpen(false)}
         onSave={handleSaveWifi}
+        onScan={handleScanWifi}
+        scanResults={wifiScanResults}
+        isScanningWifi={isScanningWifi}
       />
 
       {!isConnected ? (
