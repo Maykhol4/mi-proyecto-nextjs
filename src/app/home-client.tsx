@@ -308,7 +308,6 @@ export default function HomeClient() {
                     <div className="flex items-center justify-center space-x-4 text-sm text-muted-foreground">
                         <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-green-500 rounded-full"></div><span>Tiempo Real</span></div>
                         <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-blue-500 rounded-full"></div><span>Múltiples Sensores</span></div>
-                        <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-purple-500 rounded-full"></div><span>Alertas Nativas</span></div>
                     </div>
                 </div>
             </CardContent>
@@ -400,5 +399,3 @@ export default function HomeClient() {
     </>
   );
 }
-
-    
