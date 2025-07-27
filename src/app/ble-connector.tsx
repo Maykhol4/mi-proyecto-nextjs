@@ -82,8 +82,6 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isBleInitialized, setIsBleInitialized] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [deviceName, setDeviceName] = useState('AQUADATA-2.0');
-  const [tempDeviceName, setTempDeviceName] = useState('AQUADATA-2.0');
   
   const [isScanning, setIsScanning] = useState(false);
   const [scanResults, setScanResults] = useState<BleDevice[]>([]);
@@ -122,12 +120,6 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
     };
     
     initializeBle();
-
-    const savedName = localStorage.getItem('bleDeviceName');
-    if (savedName) {
-      setDeviceName(savedName);
-      setTempDeviceName(savedName);
-    }
   }, [toast]);
 
   const onDisconnected = useCallback(() => {
@@ -268,13 +260,6 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
     }
     onDisconnected();
   };
-
-  const handleSaveSettings = () => {
-    setDeviceName(tempDeviceName);
-    localStorage.setItem('bleDeviceName', tempDeviceName);
-    setIsSettingsOpen(false);
-    toast({ title: 'Ajustes Guardados', description: `Nombre del dispositivo actualizado a ${tempDeviceName}.` });
-  };
   
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const [containerConnected, setContainerConnected] = useState<HTMLElement | null>(null);
@@ -290,22 +275,17 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
         <>
           <div className="flex items-center justify-center space-x-2 text-muted-foreground">
             <Bluetooth className="w-5 h-5" />
-            <span>Conéctese a su dispositivo AQUADATA</span>
+            <span>Conéctese a su dispositivo BLE</span>
           </div>
           <Button onClick={handleConnect} disabled={isConnecting || !isBleInitialized || isScanning} className="w-full h-12 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105">
-            {isConnecting ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />Conectando...</> : <><Search className="w-5 h-5 mr-2" />Buscar y Conectar</>}
+            {isConnecting ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />Conectando...</> : <><Search className="w-5 h-5 mr-2" />Buscar Dispositivo</>}
           </Button>
-          <div className="text-sm text-muted-foreground flex items-center justify-center space-x-1">
-            <span>¿Problemas de conexión?</span>
-            <button onClick={() => setIsSettingsOpen(true)} className="text-blue-600 hover:text-blue-700 underline">Cambiar nombre</button>
-          </div>
         </>,
         container
       )}
 
       {containerConnected && createPortal(
         <>
-            <Button variant="outline" size="icon" onClick={() => setIsSettingsOpen(true)}><Settings className="w-4 h-4" /><span className="sr-only">Configuración</span></Button>
             <Button onClick={handleDisconnect} variant="destructive" size="sm">Desconectar</Button>
         </>,
         containerConnected
@@ -329,23 +309,6 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsScanModalOpen(false)}>Cerrar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Ajustes de Bluetooth</DialogTitle></DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="device-name" className="text-right">Nombre del Dispositivo</Label>
-              <Input id="device-name" value={tempDeviceName} onChange={(e) => setTempDeviceName(e.target.value)} className="col-span-3"/>
-            </div>
-            <p className="col-span-4 text-sm text-muted-foreground text-center">Nota: Este nombre no se usa para filtrar en el escaneo nativo.</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsSettingsOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSaveSettings}>Guardar Cambios</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
