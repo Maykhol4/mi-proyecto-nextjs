@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, type FC, useRef, useCallback } from 'react';
+import React, { useState, type FC, useRef, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useIsMobile } from '@/hooks/use-mobile';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useToast } from '@/hooks/use-toast';
 
 
 const BleConnector = dynamic(() => import('./ble-connector').then(mod => mod.BleConnector), {
@@ -228,7 +229,18 @@ export default function HomeClient() {
   const [isScanningWifi, setIsScanningWifi] = useState(false);
   
   const bleConnectorRef = useRef<BleConnectorRef>(null);
+  const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMobile = useIsMobile();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    // Cleanup timeout on component unmount
+    return () => {
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+      }
+    };
+  }, []);
   
   const getSensorStatus = (
     value: number | null, criticalMin?: number, criticalMax?: number, warningMin?: number, warningMax?: number
@@ -264,14 +276,34 @@ export default function HomeClient() {
           setIsScanningWifi(true);
           setWifiScanResults([]);
           bleConnectorRef.current.scanWifiNetworks();
+          
+          if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+
+          scanTimeoutRef.current = setTimeout(() => {
+            setIsScanningWifi(false);
+            toast({
+                title: 'Timeout de Escaneo',
+                description: 'No se recibió respuesta del dispositivo. Inténtalo de nuevo.',
+                variant: 'destructive',
+            });
+          }, 15000); // 15 segundos de timeout
       }
   };
 
   const handleWifiScanResult = useCallback((ssids: string[]) => {
-      console.log('📡 Resultados de escaneo WiFi recibidos:', ssids);
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+        scanTimeoutRef.current = null;
+      }
       setIsScanningWifi(false);
       setWifiScanResults(ssids);
-  }, []);
+      if(ssids.length === 0){
+        toast({
+            title: 'No se encontraron redes',
+            description: 'El dispositivo no encontró ninguna red WiFi cercana.',
+        });
+      }
+  }, [toast]);
 
   return (
     <>
