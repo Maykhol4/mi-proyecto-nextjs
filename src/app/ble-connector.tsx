@@ -57,6 +57,8 @@ export interface SensorData {
   readings_count: { ph: number; do: number };
   errors_count: { ph: number; do: number };
   simulation_cycle: number;
+  type?: string;
+  message?: string;
 }
 
 export const initialSensorData: SensorData = {

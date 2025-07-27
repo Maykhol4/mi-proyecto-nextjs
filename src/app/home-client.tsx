@@ -22,12 +22,21 @@ import {
   Wifi,
   Save,
   BluetoothOff,
+  MoreVertical,
 } from 'lucide-react';
 import type { SensorData, BleConnectorRef } from './ble-connector';
 import { initialSensorData } from './ble-connector';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { useIsMobile } from '@/hooks/use-mobile';
+
 
 const BleConnector = dynamic(() => import('./ble-connector').then(mod => mod.BleConnector), {
   ssr: false,
@@ -134,6 +143,7 @@ export default function HomeClient() {
   const [isConnected, setIsConnected] = useState(false);
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
   const bleConnectorRef = useRef<BleConnectorRef>(null);
+  const isMobile = useIsMobile();
   
   const getSensorStatus = (
     value: number | null, criticalMin?: number, criticalMax?: number, warningMin?: number, warningMax?: number
@@ -211,19 +221,42 @@ export default function HomeClient() {
                   <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-lg flex items-center justify-center"><Droplets className="w-6 h-6 text-white" /></div>
                   <div><h1 className="text-xl font-bold text-gray-900">AQUADATA 2.0</h1><p className="text-sm text-muted-foreground">Monitor Web</p></div>
                 </div>
-                <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
                   <Badge variant={'default'} className="flex items-center space-x-2 bg-green-600 hover:bg-green-700">
                     <BluetoothConnected className="w-4 h-4" />
                     <span>Conectado</span>
                   </Badge>
-                  <Button onClick={() => setIsWifiModalOpen(true)} variant="outline" size="sm">
-                      <Settings className="mr-2 h-4 w-4" />
-                      Ajustes
-                  </Button>
-                  <Button onClick={handleDisconnect} variant="destructive" size="sm">
-                    <BluetoothOff className="mr-2 h-4 w-4" />
-                    Desconectar
-                  </Button>
+                  
+                  {isMobile ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreVertical className="h-5 w-5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem onSelect={() => setIsWifiModalOpen(true)}>
+                          <Settings className="mr-2 h-4 w-4" />
+                          <span>Ajustes WiFi</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={handleDisconnect}>
+                          <BluetoothOff className="mr-2 h-4 w-4" />
+                          <span>Desconectar</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <>
+                      <Button onClick={() => setIsWifiModalOpen(true)} variant="outline" size="sm">
+                          <Settings className="mr-2 h-4 w-4" />
+                          Ajustes
+                      </Button>
+                      <Button onClick={handleDisconnect} variant="destructive" size="sm">
+                        <BluetoothOff className="mr-2 h-4 w-4" />
+                        Desconectar
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
