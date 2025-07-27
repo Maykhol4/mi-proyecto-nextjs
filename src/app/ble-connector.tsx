@@ -43,7 +43,7 @@ interface BleClient {
   ): Promise<void>;
   requestLEScan?(options: { services?: string[] }, onResult: (result: ScanResult) => void): Promise<void>;
   stopLEScan?(): Promise<void>;
-  requestPermissions?(): Promise<requestPermissions>;
+  requestPermissions?(): Promise<void>;
   isEnabled?(): Promise<{ value: boolean }>;
 }
 
