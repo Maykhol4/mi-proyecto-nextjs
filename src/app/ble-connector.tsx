@@ -4,27 +4,26 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Bluetooth, Settings } from 'lucide-react';
+import { RefreshCw, Bluetooth, Settings, Search, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 
 // --- DEFINICIONES DE TIPO MANUALES ---
-// Esto evita la importación directa que causa errores en el servidor.
 interface BleDevice {
   deviceId: string;
   name?: string;
 }
 
-// Interfaz unificada para nuestro adaptador
 interface BluetoothAdapter {
   initialize: () => Promise<void>;
-  requestDevice: (options: { name: string; services: string[] }) => Promise<BleDevice>;
+  requestDevice: (options: { services: string[]; name?: string }) => Promise<BleDevice>;
   connect: (deviceId: string, onDisconnect: () => void) => Promise<void>;
   disconnect: (deviceId: string) => Promise<void>;
   startNotifications: (deviceId: string, service: string, characteristic: string, callback: (value: DataView) => void) => Promise<void>;
+  startScanning?: (options: { services: string[] }, onFound: (device: BleDevice) => void) => Promise<void>;
+  stopScanning?: () => Promise<void>;
 }
-
 
 export interface SensorData {
   ph: number | null;
@@ -53,6 +52,7 @@ export const initialSensorData: SensorData = {
 // --- Constantes ---
 const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const UART_TX_CHARACTERISTIC_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const SCAN_DURATION_MS = 5000;
 
 // --- Props del Componente ---
 interface BleConnectorProps {
@@ -72,6 +72,11 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [deviceName, setDeviceName] = useState('AQUADATA-2.0');
   const [tempDeviceName, setTempDeviceName] = useState('AQUADATA-2.0');
+  
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResults, setScanResults] = useState<BleDevice[]>([]);
+  const [isScanModalOpen, setIsScanModalOpen] = useState(false);
+  const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const adapterRef = useRef<BluetoothAdapter | null>(null);
   const connectedDeviceRef = useRef<BleDevice | null>(null);
@@ -81,21 +86,26 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
     const initializeBle = async () => {
       if (typeof window !== 'undefined') {
         try {
-          // Detección de entorno: Capacitor o Web
           const { Capacitor } = await import('@capacitor/core');
           if (Capacitor.isNativePlatform()) {
-            // Entorno Nativo (APK)
             const { BleClient } = await import('@capacitor-community/bluetooth-le');
             adapterRef.current = {
               initialize: () => BleClient.initialize({ androidNeverForLocation: true }),
-              requestDevice: (opts) => BleClient.requestDevice({ name: opts.name, services: opts.services }),
+              requestDevice: opts => BleClient.requestDevice({ services: opts.services, name: opts.name }),
               connect: BleClient.connect,
               disconnect: BleClient.disconnect,
               startNotifications: BleClient.startNotifications,
+              startScanning: async (options, onFound) => {
+                await BleClient.requestLEScan(options, result => {
+                  if(result.device) {
+                    onFound({ deviceId: result.device.deviceId, name: result.device.name || result.localName });
+                  }
+                });
+              },
+              stopScanning: BleClient.stopLEScan,
             };
             toast({ title: 'Modo Nativo', description: 'Usando el plugin de Capacitor BLE.' });
           } else {
-            // Entorno Web (Navegador)
             if (navigator.bluetooth) {
               adapterRef.current = createWebBluetoothAdapter();
               toast({ title: 'Modo Web', description: 'Usando la Web Bluetooth API del navegador.' });
@@ -157,18 +167,19 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
     }
   };
   
-  const handleConnect = async () => {
-    if (!adapterRef.current || !isBleInitialized) {
-      toast({ variant: 'destructive', title: 'Bluetooth no listo', description: 'El adaptador Bluetooth no se ha inicializado.' });
-      return;
-    }
+  const connectToDevice = async (device: BleDevice) => {
+    if (!adapterRef.current) return;
     
+    setIsScanModalOpen(false);
     setIsConnecting(true);
+    
+    if (isScanning && adapterRef.current.stopScanning) {
+        await adapterRef.current.stopScanning();
+        setIsScanning(false);
+        if(scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+    }
+
     try {
-      const device = await adapterRef.current.requestDevice({
-        name: deviceName,
-        services: [UART_SERVICE_UUID],
-      });
       connectedDeviceRef.current = device;
       await adapterRef.current.connect(device.deviceId, onDisconnected);
       await adapterRef.current.startNotifications(
@@ -176,12 +187,69 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
       );
 
       setIsConnected(true);
-      toast({ title: '¡Conectado!', description: `Conectado exitosamente a ${deviceName}.` });
+      toast({ title: '¡Conectado!', description: `Conectado exitosamente a ${device.name || device.deviceId}.` });
     } catch (error) {
       console.error('La conexión falló:', error);
-      toast({ variant: 'destructive', title: 'Conexión Fallida', description: 'No se pudo encontrar o conectar al dispositivo.' });
+      toast({ variant: 'destructive', title: 'Conexión Fallida', description: 'No se pudo conectar al dispositivo.' });
     } finally {
       setIsConnecting(false);
+    }
+  };
+
+  const handleConnect = async () => {
+    if (!adapterRef.current || !isBleInitialized) {
+      toast({ variant: 'destructive', title: 'Bluetooth no listo', description: 'El adaptador Bluetooth no se ha inicializado.' });
+      return;
+    }
+
+    // El flujo para Web Bluetooth sigue siendo el mismo.
+    if (!adapterRef.current.startScanning) {
+      setIsConnecting(true);
+      try {
+        const device = await adapterRef.current.requestDevice({
+          services: [UART_SERVICE_UUID],
+          name: deviceName,
+        });
+        await connectToDevice(device);
+      } catch (error) {
+        console.error("Fallo al solicitar dispositivo:", error);
+        toast({ variant: 'destructive', title: 'Solicitud Fallida', description: 'No se seleccionó ningún dispositivo.' });
+      } finally {
+        setIsConnecting(false);
+      }
+      return;
+    }
+
+    // Nuevo flujo de escaneo para nativo.
+    setIsScanning(true);
+    setIsScanModalOpen(true);
+    setScanResults([]);
+
+    const onDeviceFound = (device: BleDevice) => {
+      setScanResults(prev => {
+        if (!prev.find(d => d.deviceId === device.deviceId)) {
+          return [...prev, device];
+        }
+        return prev;
+      });
+    };
+
+    try {
+      await adapterRef.current.startScanning({ services: [UART_SERVICE_UUID] }, onDeviceFound);
+      
+      scanTimeoutRef.current = setTimeout(async () => {
+        if (adapterRef.current?.stopScanning) {
+          await adapterRef.current.stopScanning();
+          setIsScanning(false);
+          toast({ title: "Búsqueda finalizada", description: `Se encontraron ${scanResults.length} dispositivos.`});
+        }
+      }, SCAN_DURATION_MS);
+
+    } catch(error) {
+      console.error("Fallo al escanear:", error);
+      toast({ variant: 'destructive', title: 'Error de Escaneo', description: 'No se pudo iniciar el escaneo.' });
+      setIsScanning(false);
+      setIsScanModalOpen(false);
     }
   };
 
@@ -193,7 +261,7 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
             console.error("Fallo al desconectar", error);
         }
     }
-    onDisconnected(); // Asegurarse de que el estado se limpie
+    onDisconnected();
   };
 
   const handleSaveSettings = () => {
@@ -217,14 +285,14 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
         <>
           <div className="flex items-center justify-center space-x-2 text-muted-foreground">
             <Bluetooth className="w-5 h-5" />
-            <span>Conéctese a su dispositivo {deviceName}</span>
+            <span>Conéctese a su dispositivo AQUADATA</span>
           </div>
-          <Button onClick={handleConnect} disabled={isConnecting || !isBleInitialized} className="w-full h-12 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105">
-            {isConnecting ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />Conectando...</> : <><Bluetooth className="w-5 h-5 mr-2" />Conectar a {deviceName}</>}
+          <Button onClick={handleConnect} disabled={isConnecting || !isBleInitialized || isScanning} className="w-full h-12 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105">
+            {isConnecting ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />Conectando...</> : <><Search className="w-5 h-5 mr-2" />Buscar y Conectar</>}
           </Button>
           <div className="text-sm text-muted-foreground flex items-center justify-center space-x-1">
-            <span>¿Nombre incorrecto?</span>
-            <button onClick={() => setIsSettingsOpen(true)} className="text-blue-600 hover:text-blue-700 underline">Cambiar en configuración</button>
+            <span>¿Problemas de conexión?</span>
+            <button onClick={() => setIsSettingsOpen(true)} className="text-blue-600 hover:text-blue-700 underline">Cambiar nombre</button>
           </div>
         </>,
         container
@@ -238,6 +306,28 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
         containerConnected
       )}
 
+      <Dialog open={isScanModalOpen} onOpenChange={setIsScanModalOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Buscando Dispositivos...</DialogTitle></DialogHeader>
+          <div className="py-4 space-y-4">
+            {isScanning && <div className="flex items-center justify-center space-x-2"><RefreshCw className="w-4 h-4 animate-spin" /><span>Buscando por {SCAN_DURATION_MS / 1000}s...</span></div>}
+            <div className="max-h-60 overflow-y-auto space-y-2">
+              {scanResults.length > 0 ? scanResults.map(device => (
+                <div key={device.deviceId} className="flex items-center justify-between p-2 border rounded-lg">
+                  <span>{device.name || 'Dispositivo Desconocido'} <small className="text-muted-foreground">{device.deviceId}</small></span>
+                  <Button size="sm" onClick={() => connectToDevice(device)}>Conectar</Button>
+                </div>
+              )) : (
+                !isScanning && <p className="text-center text-muted-foreground">No se encontraron dispositivos. Asegúrese de que esté encendido y cerca.</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsScanModalOpen(false)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
       <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Ajustes de Bluetooth</DialogTitle></DialogHeader>
@@ -246,6 +336,7 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
               <Label htmlFor="device-name" className="text-right">Nombre del Dispositivo</Label>
               <Input id="device-name" value={tempDeviceName} onChange={(e) => setTempDeviceName(e.target.value)} className="col-span-3"/>
             </div>
+            <p className="col-span-4 text-sm text-muted-foreground text-center">Nota: El nombre del dispositivo solo se usa como filtro en la Web Bluetooth API.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsSettingsOpen(false)}>Cancelar</Button>
@@ -257,66 +348,46 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   );
 };
 
-
-// --- Adaptador para Web Bluetooth API ---
 function createWebBluetoothAdapter(): BluetoothAdapter {
   let webDevice: BluetoothDevice | null = null;
   let onDisconnectCallback: (() => void) | null = null;
   
   const handleGattServerDisconnected = () => {
     webDevice = null;
-    if (onDisconnectCallback) {
-      onDisconnectCallback();
-    }
+    if (onDisconnectCallback) onDisconnectCallback();
   };
 
   return {
-    initialize: async () => {
-      // No hay inicialización explícita para Web Bluetooth
-      Promise.resolve();
-    },
+    initialize: () => Promise.resolve(),
     requestDevice: async (options) => {
       const device = await navigator.bluetooth.requestDevice({
-        filters: [{ name: options.name, services: options.services }],
+        filters: [{ services: options.services, name: options.name }],
         optionalServices: options.services,
       });
-      if (!device.name || !device.id) {
-        throw new Error("El dispositivo seleccionado no es válido.");
-      }
+      if (!device.name || !device.id) throw new Error("El dispositivo seleccionado no es válido.");
       return { deviceId: device.id, name: device.name };
     },
     connect: async (deviceId, onDisconnect) => {
-      // En Web Bluetooth, el 'device' ya se obtuvo en 'requestDevice'.
-      // La conexión real ocurre al acceder al servidor GATT.
       const devices = await navigator.bluetooth.getDevices();
       webDevice = devices.find(d => d.id === deviceId) || null;
-
-      if (!webDevice || !webDevice.gatt) {
-        throw new Error("No se pudo obtener el dispositivo para la conexión GATT.");
-      }
-      
+      if (!webDevice || !webDevice.gatt) throw new Error("No se pudo obtener el dispositivo para la conexión GATT.");
       onDisconnectCallback = onDisconnect;
       webDevice.addEventListener('gattserverdisconnected', handleGattServerDisconnected);
-      
       await webDevice.gatt.connect();
     },
     disconnect: async (deviceId) => {
-      if (!webDevice || !webDevice.gatt || !webDevice.gatt.connected) return;
+      if (!webDevice?.gatt?.connected) return;
       webDevice.gatt.disconnect();
       webDevice.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
-      handleGattServerDisconnected(); // Forzar limpieza de estado
+      handleGattServerDisconnected();
     },
     startNotifications: async (deviceId, serviceUUID, characteristicUUID, callback) => {
-       if (!webDevice || !webDevice.gatt || !webDevice.gatt.connected) {
-         throw new Error("Servidor GATT no conectado.");
-       }
+       if (!webDevice?.gatt?.connected) throw new Error("Servidor GATT no conectado.");
        const service = await webDevice.gatt.getPrimaryService(serviceUUID);
        const characteristic = await service.getCharacteristic(characteristicUUID);
        characteristic.addEventListener('characteristicvaluechanged', (event) => {
          const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
-         if (value) {
-            callback(value);
-         }
+         if (value) callback(value);
        });
        await characteristic.startNotifications();
     },
