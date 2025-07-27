@@ -312,13 +312,10 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
         await bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId);
       } catch (error) {
         console.error("Error desconectando:", error);
-        // Aún si hay error, forzamos la desconexión en la UI
-        onDisconnected();
       }
-    } else {
-        // Si no hay dispositivo de referencia, aseguramos que el estado esté limpio
-        onDisconnected();
     }
+    // Forzar reseteo de estado independientemente del resultado
+    onDisconnected();
   }, [onDisconnected]);
 
 
@@ -346,9 +343,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     try {
       console.log(`🔗 Intentando conectar a: ${device.name} (${device.deviceId})`);
       await bleClientRef.current.connect(device.deviceId, onDisconnected);
-      
-      if(!isMountedRef.current) return;
-
       connectedDeviceRef.current = device;
 
       try {
@@ -488,7 +482,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     }
   };
   
-  const sendCommand = useCallback(async (command: object) => {
+  const sendCommand = async (command: object) => {
     if (!bleClientRef.current || !connectedDeviceRef.current) {
       toast({ variant: 'destructive', title: 'Error', description: 'No hay un dispositivo conectado.' });
       return;
@@ -507,18 +501,17 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
         console.error("Error enviando comando", error);
         toast({ variant: 'destructive', title: 'Error de Envío', description: (error as Error).message });
     }
-  }, [toast]);
+  };
 
-  const sendWifiConfig = useCallback(async (ssid: string, psk: string) => {
+  const sendWifiConfig = async (ssid: string, psk: string) => {
     await sendCommand({ type: 'wifi_config', ssid: ssid, password: psk });
     toast({ title: 'Comando Enviado', description: 'Configuración WiFi enviada al dispositivo.' });
-  }, [sendCommand, toast]);
+  };
 
-  const scanWifiNetworks = useCallback(async () => {
+  const scanWifiNetworks = async () => {
     await sendCommand({ type: 'wifi_scan' });
     toast({ title: 'Escaneo Iniciado', description: 'Solicitando escaneo de redes WiFi al dispositivo...' });
-  }, [sendCommand, toast]);
-
+  };
 
   React.useImperativeHandle(ref, () => ({
       handleDisconnect,
