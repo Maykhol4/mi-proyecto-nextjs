@@ -106,7 +106,12 @@ const WifiConfigModal: FC<{
     const [password, setPassword] = useState('');
 
     const handleSave = () => {
+        if (!ssid.trim()) {
+            return;
+        }
         onSave(ssid, password);
+        setSsid('');
+        setPassword('');
         onClose();
     }
 
@@ -114,12 +119,18 @@ const WifiConfigModal: FC<{
         setSsid(selectedSsid);
     }
 
+    const handleClose = () => {
+        setSsid('');
+        setPassword('');
+        onClose();
+    }
+
     return (
-        <Dialog open={isOpen} onOpenChange={onClose}>
+        <Dialog open={isOpen} onOpenChange={handleClose}>
             <DialogContent className="max-w-md">
                 <DialogHeader>
                     <DialogTitle className="flex items-center space-x-2">
-                        <Wifi />
+                        <Wifi className="w-5 h-5" />
                         <span>Configurar WiFi del Dispositivo</span>
                     </DialogTitle>
                     <DialogDescription>
@@ -130,44 +141,75 @@ const WifiConfigModal: FC<{
                 <div className="space-y-4 py-2">
                     <div className="space-y-2">
                         <Label htmlFor="ssid">Nombre de Red (SSID)</Label>
-                        <Input id="ssid" value={ssid} onChange={(e) => setSsid(e.target.value)} placeholder="Ej: MiRedWiFi" />
+                        <Input 
+                            id="ssid" 
+                            value={ssid} 
+                            onChange={(e) => setSsid(e.target.value)} 
+                            placeholder="Ej: MiRedWiFi" 
+                        />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="password">Contraseña</Label>
-                        <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Introduce la contraseña" />
+                        <Input 
+                            id="password" 
+                            type="password" 
+                            value={password} 
+                            onChange={(e) => setPassword(e.target.value)} 
+                            placeholder="Introduce la contraseña" 
+                        />
                     </div>
                 </div>
 
                 <div className="space-y-3">
-                    <Button variant="outline" onClick={onScan} disabled={isScanningWifi} className="w-full">
+                    <Button 
+                        variant="outline" 
+                        onClick={onScan} 
+                        disabled={isScanningWifi} 
+                        className="w-full"
+                    >
                         {isScanningWifi ? (
-                            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                            <>
+                                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                Buscando Redes...
+                            </>
                         ) : (
-                            <Search className="mr-2 h-4 w-4" />
+                            <>
+                                <Search className="mr-2 h-4 w-4" />
+                                Buscar Redes WiFi
+                            </>
                         )}
-                        {isScanningWifi ? 'Buscando Redes...' : 'Buscar Redes WiFi'}
                     </Button>
 
                     {scanResults.length > 0 && (
-                        <ScrollArea className="h-32 w-full rounded-md border p-2">
-                            <div className="space-y-1">
-                            {scanResults.map((s, i) => (
-                                <button 
-                                    key={i} 
-                                    onClick={() => handleSelectSsid(s)}
-                                    className="w-full text-left p-2 rounded-md hover:bg-accent text-sm"
-                                >
-                                    {s}
-                                </button>
-                            ))}
-                            </div>
-                        </ScrollArea>
+                        <div className="space-y-2">
+                            <Label className="text-sm font-medium">Redes encontradas ({scanResults.length}):</Label>
+                            <ScrollArea className="h-32 w-full rounded-md border p-2">
+                                <div className="space-y-1">
+                                {scanResults.map((networkSsid, i) => (
+                                    <button 
+                                        key={i} 
+                                        onClick={() => handleSelectSsid(networkSsid)}
+                                        className={`w-full text-left p-2 rounded-md hover:bg-accent text-sm transition-colors ${
+                                            ssid === networkSsid ? 'bg-primary/10 border border-primary/20' : ''
+                                        }`}
+                                    >
+                                        <div className="flex items-center space-x-2">
+                                            <Wifi className="w-4 h-4 text-muted-foreground" />
+                                            <span>{networkSsid}</span>
+                                        </div>
+                                    </button>
+                                ))}
+                                </div>
+                            </ScrollArea>
+                        </div>
                     )}
                 </div>
 
                 <DialogFooter>
-                    <Button variant="outline" onClick={onClose}>Cancelar</Button>
-                    <Button onClick={handleSave} disabled={!ssid}>
+                    <Button variant="outline" onClick={handleClose}>
+                        Cancelar
+                    </Button>
+                    <Button onClick={handleSave} disabled={!ssid.trim()}>
                         <Save className="mr-2 h-4 w-4" />
                         Guardar y Enviar
                     </Button>
@@ -226,6 +268,7 @@ export default function HomeClient() {
   };
 
   const handleWifiScanResult = useCallback((ssids: string[]) => {
+      console.log('📡 Resultados de escaneo WiFi recibidos:', ssids);
       setIsScanningWifi(false);
       setWifiScanResults(ssids);
   }, []);
@@ -357,3 +400,5 @@ export default function HomeClient() {
     </>
   );
 }
+
+    
