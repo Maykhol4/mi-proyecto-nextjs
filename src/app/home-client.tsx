@@ -203,7 +203,8 @@ export default function HomeClient() {
   const tempStatus = getSensorStatus(sensorData.temp, 15, 30, 18, 28);
   const satStatus = getSensorStatus(sensorData.do_sat, 80, 120, 90, 110);
   
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status?: string) => {
+    if (!status) return 'border-l-gray-400';
     if (status.includes('🟢')) return 'border-l-green-500';
     if (status.includes('🟡')) return 'border-l-yellow-500';
     if (status.includes('🔴')) return 'border-l-red-500';
