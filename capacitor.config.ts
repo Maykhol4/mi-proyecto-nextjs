@@ -4,9 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.example.app',
   appName: 'AquaView',
   webDir: 'out',
-  server: {
-    androidScheme: 'https'
-  },
   plugins: {
     BluetoothLe: {
       displayStrings: {
