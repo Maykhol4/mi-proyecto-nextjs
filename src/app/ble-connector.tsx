@@ -312,9 +312,13 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
         await bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId);
       } catch (error) {
         console.error("Error desconectando:", error);
+        // Aún si hay error, forzamos la desconexión en la UI
+        onDisconnected();
       }
+    } else {
+        // Si no hay dispositivo de referencia, aseguramos que el estado esté limpio
+        onDisconnected();
     }
-    onDisconnected();
   }, [onDisconnected]);
 
 
@@ -342,6 +346,9 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     try {
       console.log(`🔗 Intentando conectar a: ${device.name} (${device.deviceId})`);
       await bleClientRef.current.connect(device.deviceId, onDisconnected);
+      
+      if(!isMountedRef.current) return;
+
       connectedDeviceRef.current = device;
 
       try {
