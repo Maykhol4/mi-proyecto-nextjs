@@ -1,0 +1,49 @@
+name: Build and Distribute Android APK
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build Android APK and Upload to Firebase
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: �� Checkout repository
+        uses: actions/checkout@v3
+
+      - name: ⚙️ Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: 📦 Install NPM dependencies
+        run: npm install
+
+      - name: ��️ Build Web App
+        run: npm run build
+
+      - name: 🔌 Capacitor sync (Android)
+        run: npx cap sync android
+
+      - name: ☕ Set up Java 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: ✅ Make Gradle executable
+        run: chmod +x ./android/gradlew
+
+      - name: 🏗️ Build APK (Debug)
+        run: cd android && ./gradlew assembleDebug
+
+      - name: �� Upload APK to Firebase App Distribution
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: 1:14147615927:android:a829eeacb7d90400e0e132
+          token: ${{ secrets.FIREBASE_TOKEN }}
+          groups: testers
+          file: android/app/build/outputs/apk/debug/app-debug.apk
+
