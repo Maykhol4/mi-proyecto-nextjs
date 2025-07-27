@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Bluetooth, Search } from 'lucide-react';
+import { RefreshCw, Bluetooth, Search, BluetoothOff } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 // Interfaces
@@ -487,6 +487,7 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
 
       {containerConnected && createPortal(
         <Button onClick={handleDisconnect} variant="destructive" size="sm">
+          <BluetoothOff className="mr-2 h-4 w-4" />
           Desconectar
         </Button>,
         containerConnected

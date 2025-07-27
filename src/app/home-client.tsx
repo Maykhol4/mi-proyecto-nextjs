@@ -19,6 +19,8 @@ import {
   BluetoothConnected,
   Minus,
   IterationCw,
+  BluetoothSearching,
+  BluetoothOff,
 } from 'lucide-react';
 import type { SensorData } from './ble-connector';
 import { initialSensorData } from './ble-connector';
@@ -147,9 +149,12 @@ export default function HomeClient() {
                   <div><h1 className="text-xl font-bold text-gray-900">AQUADATA 2.0</h1><p className="text-sm text-muted-foreground">Monitor Web</p></div>
                 </div>
                 <div className="flex items-center space-x-4">
-                  <Badge variant={isConnected ? 'default' : 'destructive'} className="flex items-center space-x-1">{isConnected ? <BluetoothConnected className="w-3 h-3" /> : <Bluetooth className="w-3 h-3" />}<span>{isConnected ? 'Conectado' : 'Desconectado'}</span></Badge>
-                  {/* El BleConnector renderizará aquí sus botones usando un Portal. */}
-                  <div id="ble-actions-container-connected" className="flex items-center space-x-2"></div>
+                  <Badge variant={'default'} className="flex items-center space-x-2 bg-green-600 hover:bg-green-700">
+                    <BluetoothConnected className="w-4 h-4" />
+                    <span>Conectado</span>
+                  </Badge>
+                  {/* El BleConnector renderizará aquí el botón de desconectar. */}
+                  <div id="ble-actions-container-connected"></div>
                 </div>
               </div>
             </div>
