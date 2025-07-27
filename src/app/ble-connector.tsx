@@ -17,7 +17,7 @@ interface BleDevice {
 
 interface BluetoothAdapter {
   initialize: () => Promise<void>;
-  requestDevice: (options: { services: string[]; name?: string }) => Promise<BleDevice>;
+  requestDevice: (options: { services?: string[]; name?: string, acceptAllDevices?: boolean }) => Promise<BleDevice>;
   connect: (deviceId: string, onDisconnect: () => void) => Promise<void>;
   disconnect: (deviceId: string) => Promise<void>;
   startNotifications: (deviceId: string, service: string, characteristic: string, callback: (value: DataView) => void) => Promise<void>;
@@ -91,7 +91,7 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
             const { BleClient } = await import('@capacitor-community/bluetooth-le');
             adapterRef.current = {
               initialize: () => BleClient.initialize({ androidNeverForLocation: true }),
-              requestDevice: opts => BleClient.requestDevice({ services: opts.services, name: opts.name }),
+              requestDevice: opts => BleClient.requestDevice(opts as any),
               connect: BleClient.connect,
               disconnect: BleClient.disconnect,
               startNotifications: BleClient.startNotifications,
@@ -182,6 +182,8 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
     try {
       connectedDeviceRef.current = device;
       await adapterRef.current.connect(device.deviceId, onDisconnected);
+      
+      // La conexión fue exitosa, ahora verificamos que tiene el servicio UART
       await adapterRef.current.startNotifications(
         device.deviceId, UART_SERVICE_UUID, UART_TX_CHARACTERISTIC_UUID, handleNotifications
       );
@@ -190,7 +192,8 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
       toast({ title: '¡Conectado!', description: `Conectado exitosamente a ${device.name || device.deviceId}.` });
     } catch (error) {
       console.error('La conexión falló:', error);
-      toast({ variant: 'destructive', title: 'Conexión Fallida', description: 'No se pudo conectar al dispositivo.' });
+      toast({ variant: 'destructive', title: 'Conexión Fallida', description: 'No se pudo conectar o el dispositivo no tiene el servicio requerido.' });
+      handleDisconnect(); // Asegurarse de limpiar el estado si falla
     } finally {
       setIsConnecting(false);
     }
@@ -207,8 +210,8 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
       setIsConnecting(true);
       try {
         const device = await adapterRef.current.requestDevice({
-          services: [UART_SERVICE_UUID],
-          name: deviceName,
+          acceptAllDevices: true,
+          optionalServices: [UART_SERVICE_UUID],
         });
         await connectToDevice(device);
       } catch (error) {
@@ -235,13 +238,16 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
     };
 
     try {
-      await adapterRef.current.startScanning({ services: [UART_SERVICE_UUID] }, onDeviceFound);
+      // Escanear sin filtros de servicio para encontrar todos los dispositivos
+      await adapterRef.current.startScanning({ services: [] }, onDeviceFound);
       
       scanTimeoutRef.current = setTimeout(async () => {
         if (adapterRef.current?.stopScanning) {
           await adapterRef.current.stopScanning();
           setIsScanning(false);
-          toast({ title: "Búsqueda finalizada", description: `Se encontraron ${scanResults.length} dispositivos.`});
+          if (scanResults.length === 0) {
+            toast({ title: "Búsqueda finalizada", description: `No se encontraron dispositivos.`});
+          }
         }
       }, SCAN_DURATION_MS);
 
@@ -336,7 +342,7 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
               <Label htmlFor="device-name" className="text-right">Nombre del Dispositivo</Label>
               <Input id="device-name" value={tempDeviceName} onChange={(e) => setTempDeviceName(e.target.value)} className="col-span-3"/>
             </div>
-            <p className="col-span-4 text-sm text-muted-foreground text-center">Nota: El nombre del dispositivo solo se usa como filtro en la Web Bluetooth API.</p>
+            <p className="col-span-4 text-sm text-muted-foreground text-center">Nota: Este nombre no se usa para filtrar en el escaneo nativo.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsSettingsOpen(false)}>Cancelar</Button>
@@ -361,7 +367,7 @@ function createWebBluetoothAdapter(): BluetoothAdapter {
     initialize: () => Promise.resolve(),
     requestDevice: async (options) => {
       const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: options.services, name: options.name }],
+        acceptAllDevices: options.acceptAllDevices,
         optionalServices: options.services,
       });
       if (!device.name || !device.id) throw new Error("El dispositivo seleccionado no es válido.");
