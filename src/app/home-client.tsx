@@ -25,6 +25,7 @@ import {
   MoreVertical,
   ChevronDown,
   RefreshCw,
+  Search,
 } from 'lucide-react';
 import type { SensorData, BleConnectorRef } from './ble-connector';
 import { initialSensorData } from './ble-connector';
