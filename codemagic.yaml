@@ -1,0 +1,25 @@
+workflows:
+  android-build:
+    name: Build Android APK
+    max_build_duration: 15
+    environment:
+      vars:
+        JAVA_VERSION: 17
+    scripts:
+      - name: 🔧 Set up Java 17
+        script: |
+          sdk install java 17.0.7-tem
+          sdk use java 17.0.7-tem
+      - name: 📦 Install NPM dependencies
+        script: npm install
+      - name: 🌐 Build Web App
+        script: npm run build
+      - name: ⚡ Sync Capacitor
+        script: npx cap sync android
+      - name: 🏗️ Build Android APK (Debug)
+        script: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug
+    artifacts:
+      - android/app/build/outputs/apk/debug/app-debug.apk
