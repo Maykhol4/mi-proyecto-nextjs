@@ -83,7 +83,7 @@ const CONNECTION_TIMEOUT_MS = 15000;
 export interface BleConnectorRef {
     handleDisconnect: () => Promise<void>;
     sendWifiConfig: (ssid: string, psk: string) => Promise<void>;
-    sendControlCommand: (command: 'wifi_disconnect' | 'wifi_status' | 'restart') => Promise<void>;
+    sendControlCommand: (command: 'wifi_disconnect' | 'restart') => Promise<void>;
 }
 
 interface BleConnectorProps {
@@ -506,7 +506,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     toast({ title: 'Comando Enviado', description: 'Configuración WiFi enviada al dispositivo.' });
   };
   
-  const sendControlCommand = async (commandType: 'wifi_disconnect' | 'wifi_status' | 'restart') => {
+  const sendControlCommand = async (commandType: 'wifi_disconnect' | 'restart') => {
     await sendCommand({ type: commandType });
     toast({ title: 'Comando Enviado', description: `Comando '${commandType}' enviado al dispositivo.` });
   }

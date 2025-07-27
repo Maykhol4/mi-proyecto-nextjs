@@ -214,7 +214,7 @@ export default function HomeClient() {
       bleConnectorRef.current?.sendWifiConfig(ssid, psk);
   }
 
-  const handleControlCommand = (command: 'wifi_disconnect' | 'wifi_status' | 'restart') => {
+  const handleControlCommand = (command: 'wifi_disconnect' | 'restart') => {
     if (command === 'restart') {
       toast({
         title: 'Reiniciando Dispositivo',
@@ -288,10 +288,6 @@ export default function HomeClient() {
                           <Settings className="mr-2 h-4 w-4" />
                           <span>Ajustes WiFi</span>
                         </DropdownMenuItem>
-                         <DropdownMenuItem onSelect={() => handleControlCommand('wifi_status')}>
-                          <Info className="mr-2 h-4 w-4" />
-                          <span>Estado WiFi</span>
-                        </DropdownMenuItem>
                          <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')}>
                           <WifiOff className="mr-2 h-4 w-4" />
                           <span>Desconectar WiFi</span>
@@ -321,10 +317,6 @@ export default function HomeClient() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
-                          <DropdownMenuItem onSelect={() => handleControlCommand('wifi_status')}>
-                            <Info className="mr-2 h-4 w-4" />
-                            <span>Estado WiFi</span>
-                          </DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')}>
                             <WifiOff className="mr-2 h-4 w-4" />
                             <span>Desconectar WiFi</span>
