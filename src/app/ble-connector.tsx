@@ -4,10 +4,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Bluetooth, Settings, Search } from 'lucide-react';
+import { RefreshCw, Bluetooth, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 
 // --- DEFINICIONES DE TIPO MANUALES ---
 interface BleDevice {
@@ -18,12 +16,17 @@ interface BleDevice {
 interface ScanResult {
   device: BleDevice;
   localName?: string;
-  // ...otros campos si son necesarios
 }
 
 interface BleClient {
   initialize(options?: { androidNeverForLocation?: boolean }): Promise<void>;
-  requestDevice(options?: { services?: string[]; name?: string; namePrefix?: string, acceptAllDevices?: boolean, optionalServices?: string[] }): Promise<BleDevice>;
+  requestDevice(options?: { 
+    services?: string[]; 
+    name?: string; 
+    namePrefix?: string; 
+    acceptAllDevices?: boolean; 
+    optionalServices?: string[] 
+  }): Promise<BleDevice>;
   connect(deviceId: string, onDisconnect?: () => void): Promise<void>;
   disconnect(deviceId: string): Promise<void>;
   startNotifications(
@@ -32,10 +35,9 @@ interface BleClient {
     characteristic: string,
     onPacket: (value: DataView) => void
   ): Promise<void>;
-  requestLEScan(options: { services?: string[] }, onResult: (result: ScanResult) => void): Promise<void>;
-  stopLEScan(): Promise<void>;
+  requestLEScan?(options: { services?: string[] }, onResult: (result: ScanResult) => void): Promise<void>;
+  stopLEScan?(): Promise<void>;
 }
-
 
 export interface SensorData {
   ph: number | null;
@@ -64,7 +66,8 @@ export const initialSensorData: SensorData = {
 // --- Constantes ---
 const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const UART_TX_CHARACTERISTIC_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
-const SCAN_DURATION_MS = 5000;
+const SCAN_DURATION_MS = 10000; // Aumentado a 10 segundos
+const CONNECTION_TIMEOUT_MS = 15000; // Timeout para conexión
 
 // --- Props del Componente ---
 interface BleConnectorProps {
@@ -73,7 +76,7 @@ interface BleConnectorProps {
   setInitialSensorData: () => void;
 }
 
-export const BleConnector: React.FC<BleConnectorProps> = ({ 
+export const BleConnector: React.FC<BleConnectorProps> = ({
   setSensorData,
   setIsConnected,
   setInitialSensorData
@@ -81,123 +84,250 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   const { toast } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
   const [isBleInitialized, setIsBleInitialized] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  
   const [isScanning, setIsScanning] = useState(false);
   const [scanResults, setScanResults] = useState<BleDevice[]>([]);
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
-  const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
+  
+  // Referencias para evitar memory leaks
   const bleClientRef = useRef<BleClient | null>(null);
   const connectedDeviceRef = useRef<BleDevice | null>(null);
   const receivedDataBuffer = useRef('');
+  const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isMountedRef = useRef(true);
 
+  // Cleanup al desmontar el componente
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      // Limpiar timeouts
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+      }
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+      }
+      // Desconectar si está conectado
+      if (connectedDeviceRef.current && bleClientRef.current) {
+        bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId).catch(console.error);
+      }
+    };
+  }, []);
+
+  // Inicialización de BLE con mejor manejo de errores
   useEffect(() => {
     const initializeBle = async () => {
-      if (typeof window !== 'undefined') {
-        try {
-          const { Capacitor } = await import('@capacitor/core');
-          if (Capacitor.isNativePlatform()) {
-            const { BleClient } = await import('@capacitor-community/bluetooth-le');
-            bleClientRef.current = BleClient;
-            await bleClientRef.current.initialize({ androidNeverForLocation: true });
-            toast({ title: 'Modo Nativo', description: 'Usando el plugin de Capacitor BLE.' });
-          } else {
-            if (navigator.bluetooth) {
-              bleClientRef.current = createWebBluetoothAdapter();
-              await bleClientRef.current.initialize();
-              toast({ title: 'Modo Web', description: 'Usando la Web Bluetooth API del navegador.' });
-            } else {
-               throw new Error('Bluetooth no es soportado en este navegador.');
-            }
+      if (typeof window === 'undefined') return;
+
+      try {
+        // Detectar si estamos en una plataforma nativa
+        const { Capacitor } = await import('@capacitor/core');
+        
+        if (Capacitor.isNativePlatform()) {
+          // Plataforma nativa - usar plugin de Capacitor
+          const { BleClient } = await import('@capacitor-community/bluetooth-le');
+          bleClientRef.current = BleClient;
+          await bleClientRef.current.initialize({ androidNeverForLocation: true });
+          
+          if (isMountedRef.current) {
+            setIsBleInitialized(true);
+            toast({ 
+              title: 'BLE Inicializado', 
+              description: 'Usando plugin nativo de Capacitor.' 
+            });
           }
-          setIsBleInitialized(true);
-        } catch (error) {
-          console.error('Error inicializando Bluetooth:', error);
-          toast({ variant: 'destructive', title: 'Error de Bluetooth', description: (error as Error).message });
+        } else {
+          // Plataforma web - usar Web Bluetooth API
+          if (!navigator.bluetooth) {
+            throw new Error('Web Bluetooth no es compatible con este navegador.');
+          }
+          
+          bleClientRef.current = createWebBluetoothAdapter();
+          await bleClientRef.current.initialize();
+          
+          if (isMountedRef.current) {
+            setIsBleInitialized(true);
+            toast({ 
+              title: 'BLE Inicializado', 
+              description: 'Usando Web Bluetooth API.' 
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error inicializando Bluetooth:', error);
+        if (isMountedRef.current) {
+          toast({ 
+            variant: 'destructive', 
+            title: 'Error de Bluetooth', 
+            description: `No se pudo inicializar BLE: ${(error as Error).message}` 
+          });
         }
       }
     };
-    
+
     initializeBle();
   }, [toast]);
 
+  // Callback para manejo de desconexión
   const onDisconnected = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
     connectedDeviceRef.current = null;
     setIsConnected(false);
     setIsConnecting(false);
     setInitialSensorData();
+    
+    // Limpiar timeout de conexión si existe
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
+    
     toast({
       title: 'Desconectado',
-      description: 'El dispositivo Bluetooth ha sido desconectado.',
+      description: 'El dispositivo Bluetooth se ha desconectado.',
     });
   }, [toast, setIsConnected, setInitialSensorData]);
 
+  // Manejo de datos recibidos con mejor validación
   const handleData = useCallback((data: SensorData) => {
-    setSensorData(data);
+    if (isMountedRef.current) {
+      setSensorData(data);
+    }
   }, [setSensorData]);
 
-  const handleNotifications = (value: DataView) => {
-    const decoder = new TextDecoder();
-    receivedDataBuffer.current += decoder.decode(value);
-    const lastNewline = receivedDataBuffer.current.lastIndexOf('\n');
-    if (lastNewline !== -1) {
-      const completeMessages = receivedDataBuffer.current.substring(0, lastNewline);
-      receivedDataBuffer.current = receivedDataBuffer.current.substring(lastNewline + 1);
+  // Procesamiento de notificaciones BLE
+  const handleNotifications = useCallback((value: DataView) => {
+    try {
+      const decoder = new TextDecoder();
+      receivedDataBuffer.current += decoder.decode(value);
+      
+      const lastNewline = receivedDataBuffer.current.lastIndexOf('\n');
+      if (lastNewline !== -1) {
+        const completeMessages = receivedDataBuffer.current.substring(0, lastNewline);
+        receivedDataBuffer.current = receivedDataBuffer.current.substring(lastNewline + 1);
 
-      completeMessages.split('\n').forEach(message => {
-        if (message) {
-          try {
-            const jsonData: SensorData = JSON.parse(message);
-            handleData(jsonData);
-          } catch (error) {
-            console.error('Fallo al parsear JSON:', error, 'Mensaje:', `"${message}"`);
+        completeMessages.split('\n').forEach(message => {
+          if (message.trim()) {
+            try {
+              const jsonData: SensorData = JSON.parse(message);
+              handleData(jsonData);
+            } catch (parseError) {
+              console.warn('Error parseando JSON:', parseError, 'Mensaje:', `"${message}"`);
+            }
           }
-        }
-      });
+        });
+      }
+    } catch (error) {
+      console.error('Error procesando notificación BLE:', error);
     }
-  };
-  
-  const connectToDevice = async (device: BleDevice) => {
-    if (!bleClientRef.current) return;
+  }, [handleData]);
+
+  // Función para detener escaneo de forma segura
+  const stopScanning = useCallback(async () => {
+    if (!isScanning || !bleClientRef.current?.stopLEScan) return;
     
+    try {
+      await bleClientRef.current.stopLEScan();
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+        scanTimeoutRef.current = null;
+      }
+    } catch (error) {
+      console.error('Error deteniendo escaneo:', error);
+    } finally {
+      if (isMountedRef.current) {
+        setIsScanning(false);
+      }
+    }
+  }, [isScanning]);
+
+  // Conexión a dispositivo específico con timeout y validación de servicio
+  const connectToDevice = async (device: BleDevice) => {
+    if (!bleClientRef.current || !isMountedRef.current) return;
+
     setIsScanModalOpen(false);
     setIsConnecting(true);
-    
-    if (isScanning && bleClientRef.current.stopLEScan) {
-        await bleClientRef.current.stopLEScan();
-        setIsScanning(false);
-        if(scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+
+    // Detener escaneo si está activo
+    if (isScanning) {
+      await stopScanning();
     }
 
+    // Configurar timeout para la conexión
+    connectionTimeoutRef.current = setTimeout(() => {
+      if (isMountedRef.current && isConnecting) {
+        toast({
+          variant: 'destructive',
+          title: 'Timeout de Conexión',
+          description: 'La conexión tardó demasiado tiempo.',
+        });
+        handleDisconnect();
+      }
+    }, CONNECTION_TIMEOUT_MS);
+
     try {
+      // Intentar conectar
       await bleClientRef.current.connect(device.deviceId, onDisconnected);
       connectedDeviceRef.current = device;
-      
-      // La conexión fue exitosa, ahora verificamos que tiene el servicio UART
-      await bleClientRef.current.startNotifications(
-        device.deviceId, UART_SERVICE_UUID, UART_TX_CHARACTERISTIC_UUID, handleNotifications
-      );
 
-      setIsConnected(true);
-      toast({ title: '¡Conectado!', description: `Conectado exitosamente a ${device.name || device.deviceId}.` });
+      // Verificar que el dispositivo tiene el servicio UART
+      try {
+        await bleClientRef.current.startNotifications(
+          device.deviceId, 
+          UART_SERVICE_UUID, 
+          UART_TX_CHARACTERISTIC_UUID, 
+          handleNotifications
+        );
+      } catch (serviceError) {
+        // El dispositivo no tiene el servicio requerido
+        throw new Error('El dispositivo no tiene el servicio UART Nordic requerido.');
+      }
+
+      // Limpiar timeout y actualizar estado
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
+
+      if (isMountedRef.current) {
+        setIsConnected(true);
+        toast({ 
+          title: '¡Conectado!', 
+          description: `Conectado exitosamente a ${device.name || device.deviceId}.` 
+        });
+      }
     } catch (error) {
-      console.error('La conexión falló:', error);
-      toast({ variant: 'destructive', title: 'Conexión Fallida', description: 'No se pudo conectar o el dispositivo no tiene el servicio requerido.' });
-      handleDisconnect(); // Asegurarse de limpiar el estado si falla
+      console.error('Error en conexión:', error);
+      if (isMountedRef.current) {
+        toast({ 
+          variant: 'destructive', 
+          title: 'Conexión Fallida', 
+          description: (error as Error).message 
+        });
+      }
+      await handleDisconnect();
     } finally {
-      setIsConnecting(false);
+      if (isMountedRef.current) {
+        setIsConnecting(false);
+      }
     }
   };
 
+  // Manejo de conexión principal
   const handleConnect = async () => {
-    if (!bleClientRef.current || !isBleInitialized) {
-      toast({ variant: 'destructive', title: 'Bluetooth no listo', description: 'El adaptador Bluetooth no se ha inicializado.' });
+    if (!bleClientRef.current || !isBleInitialized || !isMountedRef.current) {
+      toast({ 
+        variant: 'destructive', 
+        title: 'Bluetooth no listo', 
+        description: 'El adaptador Bluetooth no se ha inicializado.' 
+      });
       return;
     }
 
-    // El flujo para Web Bluetooth sigue siendo el mismo.
-    if ('requestLEScan' in bleClientRef.current === false) {
+    // Para Web Bluetooth - flujo directo
+    if (!bleClientRef.current.requestLEScan) {
       setIsConnecting(true);
       try {
         const device = await bleClientRef.current.requestDevice({
@@ -206,61 +336,98 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
         });
         await connectToDevice(device);
       } catch (error) {
-        console.error("Fallo al solicitar dispositivo:", error);
-        toast({ variant: 'destructive', title: 'Solicitud Fallida', description: 'No se seleccionó ningún dispositivo.' });
+        console.error("Error solicitando dispositivo:", error);
+        if (isMountedRef.current) {
+          const errorMessage = (error as Error).message;
+          if (errorMessage.includes('User cancelled')) {
+            toast({ 
+              title: 'Selección Cancelada', 
+              description: 'No se seleccionó ningún dispositivo.' 
+            });
+          } else {
+            toast({ 
+              variant: 'destructive', 
+              title: 'Error de Solicitud', 
+              description: errorMessage 
+            });
+          }
+        }
       } finally {
-        setIsConnecting(false);
+        if (isMountedRef.current) {
+          setIsConnecting(false);
+        }
       }
       return;
     }
 
-    // Nuevo flujo de escaneo para nativo.
+    // Para plataforma nativa - flujo de escaneo
     setIsScanning(true);
     setIsScanModalOpen(true);
     setScanResults([]);
 
     const onDeviceFound = (result: ScanResult) => {
+      if (!isMountedRef.current) return;
+      
       setScanResults(prev => {
-        if (!prev.find(d => d.deviceId === result.device.deviceId)) {
-          return [...prev, { deviceId: result.device.deviceId, name: result.device.name || result.localName }];
+        const exists = prev.find(d => d.deviceId === result.device.deviceId);
+        if (!exists) {
+          return [...prev, { 
+            deviceId: result.device.deviceId, 
+            name: result.device.name || result.localName || 'Dispositivo Desconocido'
+          }];
         }
         return prev;
       });
     };
 
     try {
-      // Escanear sin filtros de servicio para encontrar todos los dispositivos
       await bleClientRef.current.requestLEScan({ services: [] }, onDeviceFound);
-      
+
       scanTimeoutRef.current = setTimeout(async () => {
-        if (bleClientRef.current?.stopLEScan) {
-          await bleClientRef.current.stopLEScan();
-          setIsScanning(false);
-          if (scanResults.length === 0) {
-            toast({ title: "Búsqueda finalizada", description: `No se encontraron dispositivos.`});
-          }
+        await stopScanning();
+        if (isMountedRef.current && scanResults.length === 0) {
+          toast({ 
+            title: "Búsqueda finalizada", 
+            description: "No se encontraron dispositivos cercanos."
+          });
         }
       }, SCAN_DURATION_MS);
 
-    } catch(error) {
-      console.error("Fallo al escanear:", error);
-      toast({ variant: 'destructive', title: 'Error de Escaneo', description: 'No se pudo iniciar el escaneo.' });
-      setIsScanning(false);
-      setIsScanModalOpen(false);
+    } catch (error) {
+      console.error("Error iniciando escaneo:", error);
+      if (isMountedRef.current) {
+        toast({ 
+          variant: 'destructive', 
+          title: 'Error de Escaneo', 
+          description: 'No se pudo iniciar la búsqueda de dispositivos.' 
+        });
+        setIsScanning(false);
+        setIsScanModalOpen(false);
+      }
     }
   };
 
+  // Desconexión manual
   const handleDisconnect = async () => {
     if (bleClientRef.current && connectedDeviceRef.current) {
-        try {
-            await bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId);
-        } catch(error) {
-            console.error("Fallo al desconectar", error);
-        }
+      try {
+        await bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId);
+      } catch (error) {
+        console.error("Error desconectando:", error);
+      }
     }
     onDisconnected();
   };
-  
+
+  // Manejo de cierre de modal de escaneo
+  const handleScanModalClose = async () => {
+    if (isScanning) {
+      await stopScanning();
+    }
+    setIsScanModalOpen(false);
+  };
+
+  // Estados para contenedores de portal
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const [containerConnected, setContainerConnected] = useState<HTMLElement | null>(null);
 
@@ -277,38 +444,76 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
             <Bluetooth className="w-5 h-5" />
             <span>Conéctese a su dispositivo BLE</span>
           </div>
-          <Button onClick={handleConnect} disabled={isConnecting || !isBleInitialized || isScanning} className="w-full h-12 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105">
-            {isConnecting ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />Conectando...</> : <><Search className="w-5 h-5 mr-2" />Buscar Dispositivo</>}
+          <Button 
+            onClick={handleConnect} 
+            disabled={isConnecting || !isBleInitialized || isScanning} 
+            className="w-full h-12 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105"
+          >
+            {(isConnecting || isScanning) ? (
+              <>
+                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                {isScanning ? 'Buscando...' : 'Conectando...'}
+              </>
+            ) : (
+              <>
+                <Search className="w-5 h-5 mr-2" />
+                Buscar Dispositivo
+              </>
+            )}
           </Button>
         </>,
         container
       )}
 
       {containerConnected && createPortal(
-        <>
-            <Button onClick={handleDisconnect} variant="destructive" size="sm">Desconectar</Button>
-        </>,
+        <Button onClick={handleDisconnect} variant="destructive" size="sm">
+          Desconectar
+        </Button>,
         containerConnected
       )}
 
-      <Dialog open={isScanModalOpen} onOpenChange={setIsScanModalOpen}>
+      <Dialog open={isScanModalOpen} onOpenChange={handleScanModalClose}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Buscando Dispositivos...</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Buscando Dispositivos BLE</DialogTitle>
+          </DialogHeader>
           <div className="py-4 space-y-4">
-            {isScanning && <div className="flex items-center justify-center space-x-2"><RefreshCw className="w-4 h-4 animate-spin" /><span>Buscando por {SCAN_DURATION_MS / 1000}s...</span></div>}
+            {isScanning && (
+              <div className="flex items-center justify-center space-x-2">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Buscando dispositivos ({SCAN_DURATION_MS / 1000}s)...</span>
+              </div>
+            )}
             <div className="max-h-60 overflow-y-auto space-y-2">
-              {scanResults.length > 0 ? scanResults.map(device => (
-                <div key={device.deviceId} className="flex items-center justify-between p-2 border rounded-lg">
-                  <span>{device.name || 'Dispositivo Desconocido'} <small className="text-muted-foreground">{device.deviceId}</small></span>
-                  <Button size="sm" onClick={() => connectToDevice(device)}>Conectar</Button>
-                </div>
-              )) : (
-                !isScanning && <p className="text-center text-muted-foreground">No se encontraron dispositivos. Asegúrese de que esté encendido y cerca.</p>
+              {scanResults.length > 0 ? (
+                scanResults.map(device => (
+                  <div key={device.deviceId} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                    <div className="flex-1">
+                      <div className="font-medium">{device.name}</div>
+                      <div className="text-sm text-muted-foreground">{device.deviceId}</div>
+                    </div>
+                    <Button 
+                      size="sm" 
+                      onClick={() => connectToDevice(device)}
+                      disabled={isConnecting}
+                    >
+                      {isConnecting ? 'Conectando...' : 'Conectar'}
+                    </Button>
+                  </div>
+                ))
+              ) : (
+                !isScanning && (
+                  <p className="text-center text-muted-foreground py-4">
+                    No se encontraron dispositivos. Asegúrese de que el dispositivo esté encendido y cerca.
+                  </p>
+                )
               )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsScanModalOpen(false)}>Cerrar</Button>
+            <Button variant="outline" onClick={handleScanModalClose}>
+              {isScanning ? 'Cancelar' : 'Cerrar'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -316,50 +521,94 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   );
 };
 
+// Adaptador para Web Bluetooth API
 function createWebBluetoothAdapter(): BleClient {
   let webDevice: BluetoothDevice | null = null;
   let onDisconnectCallback: (() => void) | null = null;
-  
+
   const handleGattServerDisconnected = () => {
     webDevice = null;
-    if (onDisconnectCallback) onDisconnectCallback();
+    if (onDisconnectCallback) {
+      onDisconnectCallback();
+      onDisconnectCallback = null;
+    }
   };
 
   return {
     initialize: () => Promise.resolve(),
+    
     requestDevice: async (options) => {
-      const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: options.acceptAllDevices,
-        optionalServices: options.optionalServices,
-      });
-      if (!device.name || !device.id) throw new Error("El dispositivo seleccionado no es válido.");
-      webDevice = device;
-      return { deviceId: device.id, name: device.name };
+      try {
+        const device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: options?.acceptAllDevices || false,
+          optionalServices: options?.optionalServices || [],
+        });
+        
+        if (!device.id) {
+          throw new Error("El dispositivo seleccionado no tiene un ID válido.");
+        }
+        
+        webDevice = device;
+        return { 
+          deviceId: device.id, 
+          name: device.name || 'Dispositivo Desconocido' 
+        };
+      } catch (error) {
+        if ((error as Error).name === 'NotFoundError') {
+          throw new Error('User cancelled device selection');
+        }
+        throw error;
+      }
     },
+    
     connect: async (deviceId, onDisconnect) => {
-      if (!webDevice || webDevice.id !== deviceId || !webDevice.gatt) throw new Error("No se pudo obtener el dispositivo para la conexión GATT.");
-      onDisconnectCallback = onDisconnect;
+      if (!webDevice || webDevice.id !== deviceId) {
+        throw new Error("Dispositivo no encontrado para conexión.");
+      }
+      
+      if (!webDevice.gatt) {
+        throw new Error("GATT no disponible en este dispositivo.");
+      }
+      
+      onDisconnectCallback = onDisconnect || null;
       webDevice.addEventListener('gattserverdisconnected', handleGattServerDisconnected);
-      await webDevice.gatt.connect();
+      
+      try {
+        await webDevice.gatt.connect();
+      } catch (error) {
+        webDevice.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
+        throw new Error(`Error conectando: ${(error as Error).message}`);
+      }
     },
+    
     disconnect: async (deviceId) => {
       if (!webDevice?.gatt?.connected || webDevice.id !== deviceId) return;
-      webDevice.gatt.disconnect();
+      
       webDevice.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
+      webDevice.gatt.disconnect();
       handleGattServerDisconnected();
     },
+    
     startNotifications: async (deviceId, serviceUUID, characteristicUUID, callback) => {
-       if (!webDevice?.gatt?.connected || webDevice.id !== deviceId) throw new Error("Servidor GATT no conectado.");
-       const service = await webDevice.gatt.getPrimaryService(serviceUUID);
-       const characteristic = await service.getCharacteristic(characteristicUUID);
-       characteristic.addEventListener('characteristicvaluechanged', (event) => {
-         const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
-         if (value) callback(value);
-       });
-       await characteristic.startNotifications();
-    },
-    // Estas funciones no son parte de Web Bluetooth, las dejamos para compatibilidad de tipos
-    requestLEScan: () => { throw new Error('requestLEScan no está implementado para Web Bluetooth'); },
-    stopLEScan: () => { throw new Error('stopLEScan no está implementado para Web Bluetooth'); }
+      if (!webDevice?.gatt?.connected || webDevice.id !== deviceId) {
+        throw new Error("Dispositivo no conectado.");
+      }
+      
+      try {
+        const service = await webDevice.gatt.getPrimaryService(serviceUUID);
+        const characteristic = await service.getCharacteristic(characteristicUUID);
+        
+        characteristic.addEventListener('characteristicvaluechanged', (event) => {
+          const target = event.target as BluetoothRemoteGATTCharacteristic;
+          if (target.value) {
+            callback(target.value);
+          }
+        });
+        
+        await characteristic.startNotifications();
+      } catch (error) {
+        throw new Error(`Error iniciando notificaciones: ${(error as Error).message}`);
+      }
+    }
   };
 }
