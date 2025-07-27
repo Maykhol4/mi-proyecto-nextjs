@@ -75,12 +75,14 @@ interface BleConnectorProps {
   setSensorData: (data: SensorData) => void;
   setIsConnected: (isConnected: boolean) => void;
   setInitialSensorData: () => void;
+  onDisconnect: () => void;
 }
 
 export const BleConnector: React.FC<BleConnectorProps> = ({
   setSensorData,
   setIsConnected,
-  setInitialSensorData
+  setInitialSensorData,
+  onDisconnect
 }) => {
   const { toast } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
@@ -435,6 +437,7 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
       }
     }
     onDisconnected();
+    onDisconnect(); // Call prop
   };
 
   const handleScanModalClose = async () => {
@@ -449,11 +452,9 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   };
 
   const [container, setContainer] = useState<HTMLElement | null>(null);
-  const [containerConnected, setContainerConnected] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     setContainer(document.getElementById('ble-actions-container'));
-    setContainerConnected(document.getElementById('ble-actions-container-connected'));
   }, []);
 
   return (
@@ -483,14 +484,6 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
           </Button>
         </>,
         container
-      )}
-
-      {containerConnected && createPortal(
-        <Button onClick={handleDisconnect} variant="destructive" size="sm">
-          <BluetoothOff className="mr-2 h-4 w-4" />
-          Desconectar
-        </Button>,
-        containerConnected
       )}
 
       <Dialog open={isScanModalOpen} onOpenChange={handleScanModalClose}>

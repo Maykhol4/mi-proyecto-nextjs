@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, type FC } from 'react';
+import React, { useState, type FC, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -25,8 +25,10 @@ import {
 import type { SensorData } from './ble-connector';
 import { initialSensorData } from './ble-connector';
 
-// Carga dinámica del conector BLE. Este es el paso CRÍTICO.
-// `ssr: false` asegura que este componente NUNCA se ejecute en el servidor.
+interface BleConnectorRef {
+  handleDisconnect: () => Promise<void>;
+}
+
 const BleConnector = dynamic(() => import('./ble-connector').then(mod => mod.BleConnector), {
   ssr: false,
   loading: () => <Button disabled className="w-full h-12">Cargando Módulo Bluetooth...</Button>,
@@ -83,6 +85,7 @@ const SensorCard: FC<{
 export default function HomeClient() {
   const [sensorData, setSensorData] = useState<SensorData>(initialSensorData);
   const [isConnected, setIsConnected] = useState(false);
+  const bleConnectorRef = useRef<{ handleDisconnect: () => void }>(null);
   
   const getSensorStatus = (
     value: number | null, criticalMin?: number, criticalMax?: number, warningMin?: number, warningMax?: number
@@ -105,14 +108,18 @@ export default function HomeClient() {
     return 'border-l-gray-400';
   };
 
+  const handleDisconnect = () => {
+    bleConnectorRef.current?.handleDisconnect();
+  }
+
   return (
     <>
-      {/* El BleConnector está aislado y solo se carga en el cliente.
-          Maneja toda la lógica de BT y se comunica mediante props. */}
       <BleConnector
+        ref={bleConnectorRef}
         setSensorData={setSensorData}
         setIsConnected={setIsConnected}
         setInitialSensorData={() => setSensorData(initialSensorData)}
+        onDisconnect={() => setIsConnected(false)}
       />
 
       {!isConnected ? (
@@ -153,8 +160,10 @@ export default function HomeClient() {
                     <BluetoothConnected className="w-4 h-4" />
                     <span>Conectado</span>
                   </Badge>
-                  {/* El BleConnector renderizará aquí el botón de desconectar. */}
-                  <div id="ble-actions-container-connected"></div>
+                  <Button onClick={handleDisconnect} variant="destructive" size="sm">
+                    <BluetoothOff className="mr-2 h-4 w-4" />
+                    Desconectar
+                  </Button>
                 </div>
               </div>
             </div>
