@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Bluetooth, Settings, Search, X } from 'lucide-react';
+import { RefreshCw, Bluetooth, Settings, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -15,15 +15,27 @@ interface BleDevice {
   name?: string;
 }
 
-interface BluetoothAdapter {
-  initialize: () => Promise<void>;
-  requestDevice: (options: { services?: string[]; name?: string, acceptAllDevices?: boolean }) => Promise<BleDevice>;
-  connect: (deviceId: string, onDisconnect: () => void) => Promise<void>;
-  disconnect: (deviceId: string) => Promise<void>;
-  startNotifications: (deviceId: string, service: string, characteristic: string, callback: (value: DataView) => void) => Promise<void>;
-  startScanning?: (options: { services: string[] }, onFound: (device: BleDevice) => void) => Promise<void>;
-  stopScanning?: () => Promise<void>;
+interface ScanResult {
+  device: BleDevice;
+  localName?: string;
+  // ...otros campos si son necesarios
 }
+
+interface BleClient {
+  initialize(options?: { androidNeverForLocation?: boolean }): Promise<void>;
+  requestDevice(options?: { services?: string[]; name?: string; namePrefix?: string, acceptAllDevices?: boolean, optionalServices?: string[] }): Promise<BleDevice>;
+  connect(deviceId: string, onDisconnect?: () => void): Promise<void>;
+  disconnect(deviceId: string): Promise<void>;
+  startNotifications(
+    deviceId: string,
+    service: string,
+    characteristic: string,
+    onPacket: (value: DataView) => void
+  ): Promise<void>;
+  requestLEScan(options: { services?: string[] }, onResult: (result: ScanResult) => void): Promise<void>;
+  stopLEScan(): Promise<void>;
+}
+
 
 export interface SensorData {
   ph: number | null;
@@ -78,7 +90,7 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const adapterRef = useRef<BluetoothAdapter | null>(null);
+  const bleClientRef = useRef<BleClient | null>(null);
   const connectedDeviceRef = useRef<BleDevice | null>(null);
   const receivedDataBuffer = useRef('');
 
@@ -89,31 +101,18 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
           const { Capacitor } = await import('@capacitor/core');
           if (Capacitor.isNativePlatform()) {
             const { BleClient } = await import('@capacitor-community/bluetooth-le');
-            adapterRef.current = {
-              initialize: () => BleClient.initialize({ androidNeverForLocation: true }),
-              requestDevice: opts => BleClient.requestDevice(opts as any),
-              connect: BleClient.connect,
-              disconnect: BleClient.disconnect,
-              startNotifications: BleClient.startNotifications,
-              startScanning: async (options, onFound) => {
-                await BleClient.requestLEScan(options, result => {
-                  if(result.device) {
-                    onFound({ deviceId: result.device.deviceId, name: result.device.name || result.localName });
-                  }
-                });
-              },
-              stopScanning: BleClient.stopLEScan,
-            };
+            bleClientRef.current = BleClient;
+            await bleClientRef.current.initialize({ androidNeverForLocation: true });
             toast({ title: 'Modo Nativo', description: 'Usando el plugin de Capacitor BLE.' });
           } else {
             if (navigator.bluetooth) {
-              adapterRef.current = createWebBluetoothAdapter();
+              bleClientRef.current = createWebBluetoothAdapter();
+              await bleClientRef.current.initialize();
               toast({ title: 'Modo Web', description: 'Usando la Web Bluetooth API del navegador.' });
             } else {
                throw new Error('Bluetooth no es soportado en este navegador.');
             }
           }
-          await adapterRef.current.initialize();
           setIsBleInitialized(true);
         } catch (error) {
           console.error('Error inicializando Bluetooth:', error);
@@ -168,23 +167,23 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   };
   
   const connectToDevice = async (device: BleDevice) => {
-    if (!adapterRef.current) return;
+    if (!bleClientRef.current) return;
     
     setIsScanModalOpen(false);
     setIsConnecting(true);
     
-    if (isScanning && adapterRef.current.stopScanning) {
-        await adapterRef.current.stopScanning();
+    if (isScanning && bleClientRef.current.stopLEScan) {
+        await bleClientRef.current.stopLEScan();
         setIsScanning(false);
         if(scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
     }
 
     try {
+      await bleClientRef.current.connect(device.deviceId, onDisconnected);
       connectedDeviceRef.current = device;
-      await adapterRef.current.connect(device.deviceId, onDisconnected);
       
       // La conexión fue exitosa, ahora verificamos que tiene el servicio UART
-      await adapterRef.current.startNotifications(
+      await bleClientRef.current.startNotifications(
         device.deviceId, UART_SERVICE_UUID, UART_TX_CHARACTERISTIC_UUID, handleNotifications
       );
 
@@ -200,16 +199,16 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   };
 
   const handleConnect = async () => {
-    if (!adapterRef.current || !isBleInitialized) {
+    if (!bleClientRef.current || !isBleInitialized) {
       toast({ variant: 'destructive', title: 'Bluetooth no listo', description: 'El adaptador Bluetooth no se ha inicializado.' });
       return;
     }
 
     // El flujo para Web Bluetooth sigue siendo el mismo.
-    if (!adapterRef.current.startScanning) {
+    if ('requestLEScan' in bleClientRef.current === false) {
       setIsConnecting(true);
       try {
-        const device = await adapterRef.current.requestDevice({
+        const device = await bleClientRef.current.requestDevice({
           acceptAllDevices: true,
           optionalServices: [UART_SERVICE_UUID],
         });
@@ -228,10 +227,10 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
     setIsScanModalOpen(true);
     setScanResults([]);
 
-    const onDeviceFound = (device: BleDevice) => {
+    const onDeviceFound = (result: ScanResult) => {
       setScanResults(prev => {
-        if (!prev.find(d => d.deviceId === device.deviceId)) {
-          return [...prev, device];
+        if (!prev.find(d => d.deviceId === result.device.deviceId)) {
+          return [...prev, { deviceId: result.device.deviceId, name: result.device.name || result.localName }];
         }
         return prev;
       });
@@ -239,11 +238,11 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
 
     try {
       // Escanear sin filtros de servicio para encontrar todos los dispositivos
-      await adapterRef.current.startScanning({ services: [] }, onDeviceFound);
+      await bleClientRef.current.requestLEScan({ services: [] }, onDeviceFound);
       
       scanTimeoutRef.current = setTimeout(async () => {
-        if (adapterRef.current?.stopScanning) {
-          await adapterRef.current.stopScanning();
+        if (bleClientRef.current?.stopLEScan) {
+          await bleClientRef.current.stopLEScan();
           setIsScanning(false);
           if (scanResults.length === 0) {
             toast({ title: "Búsqueda finalizada", description: `No se encontraron dispositivos.`});
@@ -260,9 +259,9 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   };
 
   const handleDisconnect = async () => {
-    if (adapterRef.current && connectedDeviceRef.current) {
+    if (bleClientRef.current && connectedDeviceRef.current) {
         try {
-            await adapterRef.current.disconnect(connectedDeviceRef.current.deviceId);
+            await bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId);
         } catch(error) {
             console.error("Fallo al desconectar", error);
         }
@@ -354,7 +353,7 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
   );
 };
 
-function createWebBluetoothAdapter(): BluetoothAdapter {
+function createWebBluetoothAdapter(): BleClient {
   let webDevice: BluetoothDevice | null = null;
   let onDisconnectCallback: (() => void) | null = null;
   
@@ -368,27 +367,26 @@ function createWebBluetoothAdapter(): BluetoothAdapter {
     requestDevice: async (options) => {
       const device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: options.acceptAllDevices,
-        optionalServices: options.services,
+        optionalServices: options.optionalServices,
       });
       if (!device.name || !device.id) throw new Error("El dispositivo seleccionado no es válido.");
+      webDevice = device;
       return { deviceId: device.id, name: device.name };
     },
     connect: async (deviceId, onDisconnect) => {
-      const devices = await navigator.bluetooth.getDevices();
-      webDevice = devices.find(d => d.id === deviceId) || null;
-      if (!webDevice || !webDevice.gatt) throw new Error("No se pudo obtener el dispositivo para la conexión GATT.");
+      if (!webDevice || webDevice.id !== deviceId || !webDevice.gatt) throw new Error("No se pudo obtener el dispositivo para la conexión GATT.");
       onDisconnectCallback = onDisconnect;
       webDevice.addEventListener('gattserverdisconnected', handleGattServerDisconnected);
       await webDevice.gatt.connect();
     },
     disconnect: async (deviceId) => {
-      if (!webDevice?.gatt?.connected) return;
+      if (!webDevice?.gatt?.connected || webDevice.id !== deviceId) return;
       webDevice.gatt.disconnect();
       webDevice.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
       handleGattServerDisconnected();
     },
     startNotifications: async (deviceId, serviceUUID, characteristicUUID, callback) => {
-       if (!webDevice?.gatt?.connected) throw new Error("Servidor GATT no conectado.");
+       if (!webDevice?.gatt?.connected || webDevice.id !== deviceId) throw new Error("Servidor GATT no conectado.");
        const service = await webDevice.gatt.getPrimaryService(serviceUUID);
        const characteristic = await service.getCharacteristic(characteristicUUID);
        characteristic.addEventListener('characteristicvaluechanged', (event) => {
@@ -397,5 +395,8 @@ function createWebBluetoothAdapter(): BluetoothAdapter {
        });
        await characteristic.startNotifications();
     },
+    // Estas funciones no son parte de Web Bluetooth, las dejamos para compatibilidad de tipos
+    requestLEScan: () => { throw new Error('requestLEScan no está implementado para Web Bluetooth'); },
+    stopLEScan: () => { throw new Error('stopLEScan no está implementado para Web Bluetooth'); }
   };
 }
