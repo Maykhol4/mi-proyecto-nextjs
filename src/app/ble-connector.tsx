@@ -54,8 +54,8 @@ export interface SensorData {
   temp: number | null;
   timestamp: string;
   status: '🟢' | '🟡' | '🔴' | string;
-  readings_count: { ph: number; do: number };
-  errors_count: { ph: number; do: number };
+  readings_count?: { ph: number; do: number };
+  errors_count?: { ph: number; do: number };
   simulation_cycle: number;
   type?: string;
   message?: string;
@@ -139,7 +139,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
           const { BleClient } = await import('@capacitor-community/bluetooth-le');
           bleClientRef.current = BleClient;
           
-          // 🔴 CRÍTICO: Solicitar permisos ANTES de inicializar
           try {
             if (bleClientRef.current.requestPermissions) {
               await bleClientRef.current.requestPermissions();
@@ -155,7 +154,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
             return;
           }
 
-          // Verificar si Bluetooth está habilitado
           try {
             if (bleClientRef.current.isEnabled) {
               const enabled = await bleClientRef.current.isEnabled();
@@ -172,7 +170,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
             console.warn('⚠️ No se pudo verificar estado de Bluetooth:', enableError);
           }
 
-          // Inicializar BLE
           await bleClientRef.current.initialize({ androidNeverForLocation: false });
           
           if (isMountedRef.current) {
@@ -317,7 +314,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     // Forzar reseteo de estado independientemente del resultado
     onDisconnected();
   }, [onDisconnected]);
-
 
   const connectToDevice = async (device: BleDevice) => {
     if (!bleClientRef.current || !isMountedRef.current) return;
@@ -498,8 +494,19 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
           jsonCommand
       );
     } catch (error) {
-        console.error("Error enviando comando", error);
-        toast({ variant: 'destructive', title: 'Error de Envío', description: (error as Error).message });
+        console.error("Error enviando comando:", error);
+        // El error "GATT Error Unknown" a menudo significa que la conexión es inestable.
+        const errorMessage = (error as Error).message.includes('GATT Error Unknown')
+          ? 'Error de comunicación. La conexión puede ser inestable. Intente de nuevo.'
+          : (error as Error).message;
+
+        toast({ 
+          variant: 'destructive', 
+          title: 'Error de Envío', 
+          description: errorMessage 
+        });
+        // Opcional: considerar desconectar si el error es grave
+        // handleDisconnect();
     }
   };
 
@@ -723,3 +730,5 @@ function createWebBluetoothAdapter(): BleClient {
     }
   };
 }
+
+    
