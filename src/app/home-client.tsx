@@ -26,6 +26,9 @@ import {
   ChevronDown,
   RefreshCw,
   Search,
+  Power,
+  WifiOff,
+  Info
 } from 'lucide-react';
 import type { SensorData, BleConnectorRef } from './ble-connector';
 import { initialSensorData } from './ble-connector';
@@ -37,6 +40,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useIsMobile } from '@/hooks/use-mobile';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -99,7 +103,9 @@ const WifiConfigModal: FC<{
     isOpen: boolean;
     onClose: () => void;
     onSave: (ssid: string, psk: string) => void;
-}> = ({isOpen, onClose, onSave}) => {
+    onDisconnectWifi: () => void;
+    onGetWifiStatus: () => void;
+}> = ({isOpen, onClose, onSave, onDisconnectWifi, onGetWifiStatus}) => {
     const [ssid, setSsid] = useState('');
     const [password, setPassword] = useState('');
 
@@ -110,9 +116,6 @@ const WifiConfigModal: FC<{
             return;
         }
         onSave(ssid, password);
-        setSsid('');
-        setPassword('');
-        onClose();
     }
 
     const handleClose = () => {
@@ -156,6 +159,12 @@ const WifiConfigModal: FC<{
                     </div>
                 </div>
 
+                <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" onClick={onGetWifiStatus}><Info className="mr-2 h-4 w-4" />Ver Estado</Button>
+                    <Button variant="destructive" onClick={onDisconnectWifi}><WifiOff className="mr-2 h-4 w-4" />Desconectar</Button>
+                </div>
+
+
                 <DialogFooter>
                     <Button variant="outline" onClick={handleClose}>
                         Cancelar
@@ -178,7 +187,8 @@ export default function HomeClient() {
   
   const bleConnectorRef = useRef<BleConnectorRef>(null);
   const isMobile = useIsMobile();
-  
+  const { toast } = useToast();
+
   const getSensorStatus = (
     value: number | null, criticalMin?: number, criticalMax?: number, warningMin?: number, warningMax?: number
   ): 'critical' | 'warning' | 'normal' | 'error' => {
@@ -208,6 +218,16 @@ export default function HomeClient() {
       bleConnectorRef.current?.sendWifiConfig(ssid, psk);
   }
 
+  const handleControlCommand = (command: 'wifi_disconnect' | 'wifi_status' | 'restart') => {
+    if (command === 'restart') {
+      toast({
+        title: 'Reiniciando Dispositivo',
+        description: 'El dispositivo se reiniciará. Deberás reconectarte.'
+      });
+    }
+    bleConnectorRef.current?.sendControlCommand(command);
+  }
+
   return (
     <>
       <BleConnector
@@ -221,6 +241,8 @@ export default function HomeClient() {
         isOpen={isWifiModalOpen}
         onClose={() => setIsWifiModalOpen(false)}
         onSave={handleSaveWifi}
+        onDisconnectWifi={() => handleControlCommand('wifi_disconnect')}
+        onGetWifiStatus={() => handleControlCommand('wifi_status')}
       />
 
       {!isConnected ? (
@@ -272,9 +294,14 @@ export default function HomeClient() {
                           <Settings className="mr-2 h-4 w-4" />
                           <span>Ajustes WiFi</span>
                         </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => handleControlCommand('restart')}>
+                          <Power className="mr-2 h-4 w-4" />
+                          <span>Reiniciar Dispositivo</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={handleDisconnect}>
                           <BluetoothOff className="mr-2 h-4 w-4" />
-                          <span>Desconectar</span>
+                          <span>Desconectar BLE</span>
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -283,6 +310,10 @@ export default function HomeClient() {
                       <Button onClick={() => setIsWifiModalOpen(true)} variant="outline" size="sm">
                           <Settings className="mr-2 h-4 w-4" />
                           Ajustes
+                      </Button>
+                      <Button onClick={() => handleControlCommand('restart')} variant="outline" size="sm">
+                          <Power className="mr-2 h-4 w-4" />
+                          Reiniciar
                       </Button>
                       <Button onClick={handleDisconnect} variant="destructive" size="sm">
                         <BluetoothOff className="mr-2 h-4 w-4" />
