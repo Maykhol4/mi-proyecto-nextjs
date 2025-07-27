@@ -418,10 +418,10 @@ export default function HomeClient() {
               <CardHeader><CardTitle className="flex items-center space-x-2"><TrendingUp className="w-5 h-5" /><span>Estadísticas del Dispositivo</span></CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="text-center p-4 bg-blue-50 rounded-lg"><div className="text-2xl font-bold text-blue-600">{sensorData.readings_count.ph}</div><div className="text-sm text-muted-foreground mt-1">Lecturas pH exitosas</div></div>
-                  <div className="text-center p-4 bg-cyan-50 rounded-lg"><div className="text-2xl font-bold text-cyan-600">{sensorData.readings_count.do}</div><div className="text-sm text-muted-foreground mt-1">Lecturas DO exitosas</div></div>
-                  <div className="text-center p-4 bg-red-50 rounded-lg"><div className="text-2xl font-bold text-red-600">{sensorData.errors_count.ph}</div><div className="text-sm text-muted-foreground mt-1">Errores pH</div></div>
-                  <div className="text-center p-4 bg-orange-50 rounded-lg"><div className="text-2xl font-bold text-orange-600">{sensorData.errors_count.do}</div><div className="text-sm text-muted-foreground mt-1">Errores DO</div></div>
+                  <div className="text-center p-4 bg-blue-50 rounded-lg"><div className="text-2xl font-bold text-blue-600">{sensorData.readings_count?.ph ?? 0}</div><div className="text-sm text-muted-foreground mt-1">Lecturas pH exitosas</div></div>
+                  <div className="text-center p-4 bg-cyan-50 rounded-lg"><div className="text-2xl font-bold text-cyan-600">{sensorData.readings_count?.do ?? 0}</div><div className="text-sm text-muted-foreground mt-1">Lecturas DO exitosas</div></div>
+                  <div className="text-center p-4 bg-red-50 rounded-lg"><div className="text-2xl font-bold text-red-600">{sensorData.errors_count?.ph ?? 0}</div><div className="text-sm text-muted-foreground mt-1">Errores pH</div></div>
+                  <div className="text-center p-4 bg-orange-50 rounded-lg"><div className="text-2xl font-bold text-orange-600">{sensorData.errors_count?.do ?? 0}</div><div className="text-sm text-muted-foreground mt-1">Errores DO</div></div>
                 </div>
               </CardContent>
             </Card>
