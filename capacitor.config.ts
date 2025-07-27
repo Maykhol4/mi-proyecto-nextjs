@@ -6,6 +6,17 @@ const config: CapacitorConfig = {
   webDir: 'out',
   server: {
     androidScheme: 'https'
+  },
+  plugins: {
+    BluetoothLe: {
+      displayStrings: {
+        scanning: "Buscando dispositivos BLE...",
+        cancel: "Cancelar",
+        ok: "OK",
+        connect: "Conectar",
+        disconnect: "Desconectar"
+      }
+    }
   }
 };
 
