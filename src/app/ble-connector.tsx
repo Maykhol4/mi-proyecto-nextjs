@@ -35,6 +35,12 @@ interface BleClient {
     characteristic: string,
     onPacket: (value: DataView) => void
   ): Promise<void>;
+  write(
+    deviceId: string,
+    service: string,
+    characteristic: string,
+    value: string,
+  ): Promise<void>;
   requestLEScan?(options: { services?: string[] }, onResult: (result: ScanResult) => void): Promise<void>;
   stopLEScan?(): Promise<void>;
   requestPermissions?(): Promise<void>;
@@ -68,22 +74,26 @@ export const initialSensorData: SensorData = {
 // Constantes
 const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const UART_TX_CHARACTERISTIC_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const UART_RX_CHARACTERISTIC_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 const SCAN_DURATION_MS = 10000;
 const CONNECTION_TIMEOUT_MS = 15000;
+
+export interface BleConnectorRef {
+    handleDisconnect: () => Promise<void>;
+    sendWifiConfig: (ssid: string, psk: string) => Promise<void>;
+}
 
 interface BleConnectorProps {
   setSensorData: (data: SensorData) => void;
   setIsConnected: (isConnected: boolean) => void;
   setInitialSensorData: () => void;
-  onDisconnect: () => void;
 }
 
-export const BleConnector: React.FC<BleConnectorProps> = ({
+export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>(({
   setSensorData,
   setIsConnected,
-  setInitialSensorData,
-  onDisconnect
-}) => {
+  setInitialSensorData
+}, ref) => {
   const { toast } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
   const [isBleInitialized, setIsBleInitialized] = useState(false);
@@ -235,7 +245,16 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
           if (message.trim()) {
             try {
               const jsonData: SensorData = JSON.parse(message);
-              handleData(jsonData);
+              // Podríamos recibir respuestas a comandos aquí, podríamos manejarlos
+              if (jsonData.type === 'wifi_config_response') {
+                  toast({
+                      title: 'Respuesta del Dispositivo',
+                      description: jsonData.message,
+                      variant: jsonData.status === 'success' ? 'default' : 'destructive'
+                  });
+              } else {
+                  handleData(jsonData);
+              }
             } catch (parseError) {
               console.warn('Error parseando JSON:', parseError, 'Mensaje:', `"${message}"`);
             }
@@ -245,7 +264,7 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
     } catch (error) {
       console.error('Error procesando notificación BLE:', error);
     }
-  }, [handleData]);
+  }, [handleData, toast]);
 
   const stopScanning = useCallback(async () => {
     if (!isScanning || !bleClientRef.current?.stopLEScan) return;
@@ -264,6 +283,18 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
       }
     }
   }, [isScanning]);
+  
+  const handleDisconnect = useCallback(async () => {
+    if (bleClientRef.current && connectedDeviceRef.current) {
+      try {
+        await bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId);
+      } catch (error) {
+        console.error("Error desconectando:", error);
+      }
+    }
+    onDisconnected();
+  }, [onDisconnected]);
+
 
   const connectToDevice = async (device: BleDevice) => {
     if (!bleClientRef.current || !isMountedRef.current) return;
@@ -428,17 +459,37 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
     }
   };
 
-  const handleDisconnect = async () => {
-    if (bleClientRef.current && connectedDeviceRef.current) {
-      try {
-        await bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId);
-      } catch (error) {
-        console.error("Error desconectando:", error);
-      }
+  const sendWifiConfig = useCallback(async (ssid: string, psk: string) => {
+    if (!bleClientRef.current || !connectedDeviceRef.current) {
+      toast({ variant: 'destructive', title: 'Error', description: 'No hay un dispositivo conectado.' });
+      return;
     }
-    onDisconnected();
-    onDisconnect(); // Call prop
-  };
+
+    const command = {
+      type: 'wifi_config',
+      ssid: ssid,
+      password: psk,
+    };
+    
+    try {
+      const jsonCommand = JSON.stringify(command);
+      await bleClientRef.current.write(
+          connectedDeviceRef.current.deviceId,
+          UART_SERVICE_UUID,
+          UART_RX_CHARACTERISTIC_UUID,
+          jsonCommand
+      );
+      toast({ title: 'Comando Enviado', description: 'Configuración WiFi enviada al dispositivo.' });
+    } catch (error) {
+        console.error("Error enviando config wifi", error);
+        toast({ variant: 'destructive', title: 'Error de Envío', description: (error as Error).message });
+    }
+  }, [toast]);
+
+  React.useImperativeHandle(ref, () => ({
+      handleDisconnect,
+      sendWifiConfig
+  }));
 
   const handleScanModalClose = async () => {
     if (isScanning && bleClientRef.current?.stopLEScan) {
@@ -459,7 +510,7 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
 
   return (
     <>
-      {container && createPortal(
+      {container && !connectedDeviceRef.current && createPortal(
         <>
           <div className="flex items-center justify-center space-x-2 text-muted-foreground">
             <Bluetooth className="w-5 h-5" />
@@ -536,7 +587,8 @@ export const BleConnector: React.FC<BleConnectorProps> = ({
       </Dialog>
     </>
   );
-};
+});
+BleConnector.displayName = "BleConnector";
 
 // Adaptador para Web Bluetooth API
 function createWebBluetoothAdapter(): BleClient {
@@ -626,6 +678,20 @@ function createWebBluetoothAdapter(): BleClient {
       } catch (error) {
         throw new Error(`Error iniciando notificaciones: ${(error as Error).message}`);
       }
+    },
+    
+    write: async (deviceId, serviceUUID, characteristicUUID, value) => {
+        if (!webDevice?.gatt?.connected || webDevice.id !== deviceId) {
+            throw new Error("Dispositivo no conectado.");
+        }
+        try {
+            const service = await webDevice.gatt.getPrimaryService(serviceUUID);
+            const characteristic = await service.getCharacteristic(characteristicUUID);
+            const encoder = new TextEncoder();
+            await characteristic.writeValue(encoder.encode(value));
+        } catch(error) {
+            throw new Error(`Error escribiendo en característica: ${(error as Error).message}`);
+        }
     }
   };
 }

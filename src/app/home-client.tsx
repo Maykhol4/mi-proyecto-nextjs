@@ -19,15 +19,15 @@ import {
   BluetoothConnected,
   Minus,
   IterationCw,
-  BluetoothSearching,
+  Wifi,
+  Save,
   BluetoothOff,
 } from 'lucide-react';
-import type { SensorData } from './ble-connector';
+import type { SensorData, BleConnectorRef } from './ble-connector';
 import { initialSensorData } from './ble-connector';
-
-interface BleConnectorRef {
-  handleDisconnect: () => Promise<void>;
-}
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 const BleConnector = dynamic(() => import('./ble-connector').then(mod => mod.BleConnector), {
   ssr: false,
@@ -81,11 +81,59 @@ const SensorCard: FC<{
 };
 
 
+const WifiConfigModal: FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onSave: (ssid: string, psk: string) => void;
+}> = ({isOpen, onClose, onSave}) => {
+    const [ssid, setSsid] = useState('');
+    const [password, setPassword] = useState('');
+
+    const handleSave = () => {
+        onSave(ssid, password);
+        onClose();
+    }
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onClose}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle className="flex items-center space-x-2">
+                        <Wifi />
+                        <span>Configurar WiFi del Dispositivo</span>
+                    </DialogTitle>
+                    <DialogDescription>
+                        Introduce las credenciales de la red WiFi a la que se conectará el dispositivo ESP32.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-4 space-y-4">
+                    <div>
+                        <Label htmlFor="ssid">Nombre de Red (SSID)</Label>
+                        <Input id="ssid" value={ssid} onChange={(e) => setSsid(e.target.value)} placeholder="Ej: MiRedWiFi" />
+                    </div>
+                    <div>
+                        <Label htmlFor="password">Contraseña</Label>
+                        <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Introduce la contraseña" />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={onClose}>Cancelar</Button>
+                    <Button onClick={handleSave} disabled={!ssid || !password}>
+                        <Save className="mr-2 h-4 w-4" />
+                        Guardar y Enviar
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    )
+}
+
 // --- Main UI Component ---
 export default function HomeClient() {
   const [sensorData, setSensorData] = useState<SensorData>(initialSensorData);
   const [isConnected, setIsConnected] = useState(false);
-  const bleConnectorRef = useRef<{ handleDisconnect: () => void }>(null);
+  const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
+  const bleConnectorRef = useRef<BleConnectorRef>(null);
   
   const getSensorStatus = (
     value: number | null, criticalMin?: number, criticalMax?: number, warningMin?: number, warningMax?: number
@@ -110,6 +158,10 @@ export default function HomeClient() {
 
   const handleDisconnect = () => {
     bleConnectorRef.current?.handleDisconnect();
+  };
+  
+  const handleSaveWifi = (ssid: string, psk: string) => {
+      bleConnectorRef.current?.sendWifiConfig(ssid, psk);
   }
 
   return (
@@ -119,7 +171,12 @@ export default function HomeClient() {
         setSensorData={setSensorData}
         setIsConnected={setIsConnected}
         setInitialSensorData={() => setSensorData(initialSensorData)}
-        onDisconnect={() => setIsConnected(false)}
+      />
+
+      <WifiConfigModal 
+        isOpen={isWifiModalOpen}
+        onClose={() => setIsWifiModalOpen(false)}
+        onSave={handleSaveWifi}
       />
 
       {!isConnected ? (
@@ -133,7 +190,6 @@ export default function HomeClient() {
               <CardDescription className="text-muted-foreground mt-2 leading-relaxed">Sistema Avanzado de Monitoreo de Calidad del Agua</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-                {/* El BleConnector renderizará aquí sus botones usando un Portal. */}
                 <div id="ble-actions-container" className="text-center space-y-4"></div>
                 <div className="border-t pt-4">
                     <div className="flex items-center justify-center space-x-4 text-sm text-muted-foreground">
@@ -160,6 +216,10 @@ export default function HomeClient() {
                     <BluetoothConnected className="w-4 h-4" />
                     <span>Conectado</span>
                   </Badge>
+                  <Button onClick={() => setIsWifiModalOpen(true)} variant="outline" size="sm">
+                      <Settings className="mr-2 h-4 w-4" />
+                      Ajustes
+                  </Button>
                   <Button onClick={handleDisconnect} variant="destructive" size="sm">
                     <BluetoothOff className="mr-2 h-4 w-4" />
                     Desconectar
