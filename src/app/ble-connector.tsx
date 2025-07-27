@@ -250,22 +250,29 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
           if (message.trim()) {
             try {
               const jsonData = JSON.parse(message);
+              console.log('📦 Mensaje recibido:', jsonData);
               
               if (jsonData.type === 'wifi_config_response') {
                   toast({
-                      title: 'Respuesta del Dispositivo',
-                      description: jsonData.message,
+                      title: 'Configuración WiFi',
+                      description: jsonData.message || 'Configuración enviada al dispositivo',
                       variant: jsonData.status === 'success' ? 'default' : 'destructive'
                   });
               } else if (jsonData.type === 'wifi_scan_response') {
-                  if (jsonData.status === 'success') {
-                      onWifiScanResult(jsonData.ssids || []);
+                  console.log('📡 Respuesta escaneo WiFi:', jsonData);
+                  if (jsonData.status === 'success' && Array.isArray(jsonData.ssids)) {
+                      onWifiScanResult(jsonData.ssids);
+                      toast({
+                          title: 'Escaneo WiFi Completado',
+                          description: `Se encontraron ${jsonData.ssids.length} redes.`
+                      });
                   } else {
                       toast({
                           title: 'Error de Escaneo WiFi',
                           description: jsonData.message || 'El dispositivo no pudo escanear redes.',
                           variant: 'destructive'
                       });
+                      onWifiScanResult([]);
                   }
               } else {
                   handleData(jsonData as SensorData);
@@ -482,6 +489,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     
     try {
       const jsonCommand = JSON.stringify(command);
+      console.log('📤 Enviando comando:', jsonCommand);
       await bleClientRef.current.write(
           connectedDeviceRef.current.deviceId,
           UART_SERVICE_UUID,
@@ -501,7 +509,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
 
   const scanWifiNetworks = useCallback(async () => {
     await sendCommand({ type: 'wifi_scan' });
-    toast({ title: 'Comando Enviado', description: 'Solicitando escaneo de redes WiFi al dispositivo.' });
+    toast({ title: 'Escaneo Iniciado', description: 'Solicitando escaneo de redes WiFi al dispositivo...' });
   }, [sendCommand, toast]);
 
 
