@@ -465,6 +465,16 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       toast({ variant: 'destructive', title: 'Error', description: 'No hay un dispositivo conectado.' });
       return;
     }
+     // Check for Web Bluetooth adapter and disconnected server
+    if ('isGattServerDisconnected' in bleClientRef.current && bleClientRef.current.isGattServerDisconnected()) {
+        toast({
+            variant: 'destructive',
+            title: 'Desconectado',
+            description: 'El dispositivo se ha desconectado. Por favor, vuelve a conectar.'
+        });
+        onDisconnected();
+        return;
+    }
     
     try {
       const jsonCommand = JSON.stringify(command);
@@ -477,18 +487,17 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       );
     } catch (error) {
         console.error("Error enviando comando:", error);
-        // El error "GATT Error Unknown" a menudo significa que la conexión es inestable.
-        const errorMessage = (error as Error).message.includes('GATT Error Unknown')
-          ? 'Error de comunicación. La conexión puede ser inestable. Intente de nuevo.'
-          : (error as Error).message;
+        const errorMessage = (error as Error).message;
 
         toast({ 
           variant: 'destructive', 
           title: 'Error de Envío', 
           description: errorMessage 
         });
-        // Opcional: considerar desconectar si el error es grave
-        // handleDisconnect();
+
+        if (errorMessage.toLowerCase().includes('disconnected')) {
+            onDisconnected();
+        }
     }
   };
 
@@ -613,10 +622,9 @@ function createWebBluetoothAdapter(): BleClient {
   let onDisconnectCallback: (() => void) | null = null;
 
   const handleGattServerDisconnected = () => {
-    webDevice = null;
+    // No limpiar webDevice aquí para permitir la reconexión.
     if (onDisconnectCallback) {
       onDisconnectCallback();
-      onDisconnectCallback = null;
     }
   };
 
@@ -655,6 +663,11 @@ function createWebBluetoothAdapter(): BleClient {
       if (!webDevice.gatt) {
         throw new Error("GATT no disponible en este dispositivo.");
       }
+
+      if (webDevice.gatt.connected) {
+        console.log("Ya conectado al servidor GATT.");
+        return;
+      }
       
       onDisconnectCallback = onDisconnect || null;
       webDevice.addEventListener('gattserverdisconnected', handleGattServerDisconnected);
@@ -672,7 +685,7 @@ function createWebBluetoothAdapter(): BleClient {
       
       webDevice.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
       webDevice.gatt.disconnect();
-      handleGattServerDisconnected();
+      // onDisconnected se llamará a través del evento 'gattserverdisconnected'
     },
     
     startNotifications: async (deviceId, serviceUUID, characteristicUUID, callback) => {
@@ -699,7 +712,7 @@ function createWebBluetoothAdapter(): BleClient {
     
     write: async (deviceId, serviceUUID, characteristicUUID, value) => {
         if (!webDevice?.gatt?.connected || webDevice.id !== deviceId) {
-            throw new Error("Dispositivo no conectado.");
+            throw new Error("GATT Server is disconnected. Cannot perform GATT operations. (Re)connect first with device.gatt.connect.");
         }
         try {
             const service = await webDevice.gatt.getPrimaryService(serviceUUID);
@@ -709,6 +722,9 @@ function createWebBluetoothAdapter(): BleClient {
         } catch(error) {
             throw new Error(`Error escribiendo en característica: ${(error as Error).message}`);
         }
+    },
+    isGattServerDisconnected: () => {
+        return !webDevice?.gatt?.connected;
     }
   };
 }

@@ -56,7 +56,7 @@ const BleConnector = dynamic(() => import('./ble-connector').then(mod => mod.Ble
 const SensorCard: FC<{
   icon: React.ReactNode;
   title: string;
-  value: number | null;
+  value: number | null | undefined;
   unit: string;
   description?: string;
   status: 'normal' | 'warning' | 'critical' | 'error';
@@ -78,6 +78,8 @@ const SensorCard: FC<{
       default: return <XCircle className="w-5 h-5 text-muted-foreground" />;
     }
   };
+  
+  const hasValue = typeof value === 'number';
 
   return (
     <Card className={`border-2 ${getStatusColor()} transition-all duration-300 hover:shadow-lg`}>
@@ -89,7 +91,7 @@ const SensorCard: FC<{
       </CardHeader>
       <CardContent>
         <div className="text-3xl font-bold text-foreground mb-2">
-          {value !== null ? value.toFixed(2) : <Minus className="inline-block h-8 w-8" />}
+          {hasValue ? value.toFixed(2) : <Minus className="inline-block h-8 w-8" />}
           <span className="text-xl ml-2 text-muted-foreground">{unit}</span>
         </div>
         {description && <p className="text-sm text-muted-foreground">{description}</p>}
@@ -103,9 +105,7 @@ const WifiConfigModal: FC<{
     isOpen: boolean;
     onClose: () => void;
     onSave: (ssid: string, psk: string) => void;
-    onDisconnectWifi: () => void;
-    onGetWifiStatus: () => void;
-}> = ({isOpen, onClose, onSave, onDisconnectWifi, onGetWifiStatus}) => {
+}> = ({isOpen, onClose, onSave}) => {
     const [ssid, setSsid] = useState('');
     const [password, setPassword] = useState('');
 
@@ -116,6 +116,7 @@ const WifiConfigModal: FC<{
             return;
         }
         onSave(ssid, password);
+        onClose();
     }
 
     const handleClose = () => {
@@ -133,7 +134,7 @@ const WifiConfigModal: FC<{
                         <span>Configurar WiFi del Dispositivo</span>
                     </DialogTitle>
                     <DialogDescription>
-                        Introduce las credenciales de la red WiFi a la que se conectará el dispositivo ESP32.
+                        Introduce manualmente las credenciales de la red WiFi a la que se conectará el dispositivo ESP32.
                     </DialogDescription>
                 </DialogHeader>
                 
@@ -158,12 +159,6 @@ const WifiConfigModal: FC<{
                         />
                     </div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                    <Button variant="outline" onClick={onGetWifiStatus}><Info className="mr-2 h-4 w-4" />Ver Estado</Button>
-                    <Button variant="destructive" onClick={onDisconnectWifi}><WifiOff className="mr-2 h-4 w-4" />Desconectar</Button>
-                </div>
-
 
                 <DialogFooter>
                     <Button variant="outline" onClick={handleClose}>
@@ -190,9 +185,9 @@ export default function HomeClient() {
   const { toast } = useToast();
 
   const getSensorStatus = (
-    value: number | null, criticalMin?: number, criticalMax?: number, warningMin?: number, warningMax?: number
+    value: number | null | undefined, criticalMin?: number, criticalMax?: number, warningMin?: number, warningMax?: number
   ): 'critical' | 'warning' | 'normal' | 'error' => {
-    if (value === null) return 'error';
+    if (typeof value !== 'number') return 'error';
     if ((criticalMin !== undefined && value < criticalMin) || (criticalMax !== undefined && value > criticalMax)) return 'critical';
     if ((warningMin !== undefined && value < warningMin) || (warningMax !== undefined && value > warningMax)) return 'warning';
     return 'normal';
@@ -204,7 +199,7 @@ export default function HomeClient() {
   const satStatus = getSensorStatus(sensorData.do_sat, 80, 120, 90, 110);
   
   const getStatusColor = (status?: string) => {
-    if (!status) return 'border-l-gray-400';
+    if (typeof status !== 'string') return 'border-l-gray-400';
     if (status.includes('🟢')) return 'border-l-green-500';
     if (status.includes('🟡')) return 'border-l-yellow-500';
     if (status.includes('🔴')) return 'border-l-red-500';
@@ -242,8 +237,6 @@ export default function HomeClient() {
         isOpen={isWifiModalOpen}
         onClose={() => setIsWifiModalOpen(false)}
         onSave={handleSaveWifi}
-        onDisconnectWifi={() => handleControlCommand('wifi_disconnect')}
-        onGetWifiStatus={() => handleControlCommand('wifi_status')}
       />
 
       {!isConnected ? (
@@ -295,6 +288,14 @@ export default function HomeClient() {
                           <Settings className="mr-2 h-4 w-4" />
                           <span>Ajustes WiFi</span>
                         </DropdownMenuItem>
+                         <DropdownMenuItem onSelect={() => handleControlCommand('wifi_status')}>
+                          <Info className="mr-2 h-4 w-4" />
+                          <span>Estado WiFi</span>
+                        </DropdownMenuItem>
+                         <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')}>
+                          <WifiOff className="mr-2 h-4 w-4" />
+                          <span>Desconectar WiFi</span>
+                        </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => handleControlCommand('restart')}>
                           <Power className="mr-2 h-4 w-4" />
                           <span>Reiniciar Dispositivo</span>
@@ -312,10 +313,28 @@ export default function HomeClient() {
                           <Settings className="mr-2 h-4 w-4" />
                           Ajustes
                       </Button>
-                      <Button onClick={() => handleControlCommand('restart')} variant="outline" size="sm">
-                          <Power className="mr-2 h-4 w-4" />
-                          Reiniciar
-                      </Button>
+                       <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            Comandos
+                            <ChevronDown className="ml-2 h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          <DropdownMenuItem onSelect={() => handleControlCommand('wifi_status')}>
+                            <Info className="mr-2 h-4 w-4" />
+                            <span>Estado WiFi</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')}>
+                            <WifiOff className="mr-2 h-4 w-4" />
+                            <span>Desconectar WiFi</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => handleControlCommand('restart')}>
+                            <Power className="mr-2 h-4 w-4" />
+                            <span>Reiniciar Dispositivo</span>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       <Button onClick={handleDisconnect} variant="destructive" size="sm">
                         <BluetoothOff className="mr-2 h-4 w-4" />
                         Desconectar
