@@ -99,14 +99,13 @@ const WifiConfigModal: FC<{
     isOpen: boolean;
     onClose: () => void;
     onSave: (ssid: string, psk: string) => void;
-    onScan: () => void;
-    scanResults: string[];
-    isScanningWifi: boolean;
-}> = ({isOpen, onClose, onSave, onScan, scanResults, isScanningWifi}) => {
+}> = ({isOpen, onClose, onSave}) => {
     const [ssid, setSsid] = useState('');
     const [password, setPassword] = useState('');
 
-    const handleSave = () => {
+    const handleSave = (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
         if (!ssid.trim()) {
             return;
         }
@@ -114,10 +113,6 @@ const WifiConfigModal: FC<{
         setSsid('');
         setPassword('');
         onClose();
-    }
-
-    const handleSelectSsid = (selectedSsid: string) => {
-        setSsid(selectedSsid);
     }
 
     const handleClose = () => {
@@ -135,7 +130,7 @@ const WifiConfigModal: FC<{
                         <span>Configurar WiFi del Dispositivo</span>
                     </DialogTitle>
                     <DialogDescription>
-                        Busca o introduce las credenciales de la red WiFi a la que se conectará el dispositivo ESP32.
+                        Introduce las credenciales de la red WiFi a la que se conectará el dispositivo ESP32.
                     </DialogDescription>
                 </DialogHeader>
                 
@@ -161,51 +156,6 @@ const WifiConfigModal: FC<{
                     </div>
                 </div>
 
-                <div className="space-y-3">
-                    <Button 
-                        variant="outline" 
-                        onClick={onScan} 
-                        disabled={isScanningWifi} 
-                        className="w-full"
-                    >
-                        {isScanningWifi ? (
-                            <>
-                                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                Buscando Redes...
-                            </>
-                        ) : (
-                            <>
-                                <Search className="mr-2 h-4 w-4" />
-                                Buscar Redes WiFi
-                            </>
-                        )}
-                    </Button>
-
-                    {scanResults.length > 0 && (
-                        <div className="space-y-2">
-                            <Label className="text-sm font-medium">Redes encontradas ({scanResults.length}):</Label>
-                            <ScrollArea className="h-32 w-full rounded-md border p-2">
-                                <div className="space-y-1">
-                                {scanResults.map((networkSsid, i) => (
-                                    <button 
-                                        key={i} 
-                                        onClick={() => handleSelectSsid(networkSsid)}
-                                        className={`w-full text-left p-2 rounded-md hover:bg-accent text-sm transition-colors ${
-                                            ssid === networkSsid ? 'bg-primary/10 border border-primary/20' : ''
-                                        }`}
-                                    >
-                                        <div className="flex items-center space-x-2">
-                                            <Wifi className="w-4 h-4 text-muted-foreground" />
-                                            <span>{networkSsid}</span>
-                                        </div>
-                                    </button>
-                                ))}
-                                </div>
-                            </ScrollArea>
-                        </div>
-                    )}
-                </div>
-
                 <DialogFooter>
                     <Button variant="outline" onClick={handleClose}>
                         Cancelar
@@ -225,22 +175,9 @@ export default function HomeClient() {
   const [sensorData, setSensorData] = useState<SensorData>(initialSensorData);
   const [isConnected, setIsConnected] = useState(false);
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
-  const [wifiScanResults, setWifiScanResults] = useState<string[]>([]);
-  const [isScanningWifi, setIsScanningWifi] = useState(false);
   
   const bleConnectorRef = useRef<BleConnectorRef>(null);
-  const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMobile = useIsMobile();
-  const { toast } = useToast();
-
-  useEffect(() => {
-    // Cleanup timeout on component unmount
-    return () => {
-      if (scanTimeoutRef.current) {
-        clearTimeout(scanTimeoutRef.current);
-      }
-    };
-  }, []);
   
   const getSensorStatus = (
     value: number | null, criticalMin?: number, criticalMax?: number, warningMin?: number, warningMax?: number
@@ -271,40 +208,6 @@ export default function HomeClient() {
       bleConnectorRef.current?.sendWifiConfig(ssid, psk);
   }
 
-  const handleScanWifi = () => {
-      if (bleConnectorRef.current) {
-          setIsScanningWifi(true);
-          setWifiScanResults([]);
-          bleConnectorRef.current.scanWifiNetworks();
-          
-          if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
-
-          scanTimeoutRef.current = setTimeout(() => {
-            setIsScanningWifi(false);
-            toast({
-                title: 'Timeout de Escaneo',
-                description: 'No se recibió respuesta del dispositivo. Inténtalo de nuevo.',
-                variant: 'destructive',
-            });
-          }, 15000); // 15 segundos de timeout
-      }
-  };
-
-  const handleWifiScanResult = useCallback((ssids: string[]) => {
-      if (scanTimeoutRef.current) {
-        clearTimeout(scanTimeoutRef.current);
-        scanTimeoutRef.current = null;
-      }
-      setIsScanningWifi(false);
-      setWifiScanResults(ssids);
-      if(ssids.length === 0){
-        toast({
-            title: 'No se encontraron redes',
-            description: 'El dispositivo no encontró ninguna red WiFi cercana.',
-        });
-      }
-  }, [toast]);
-
   return (
     <>
       <BleConnector
@@ -312,16 +215,12 @@ export default function HomeClient() {
         setSensorData={setSensorData}
         setIsConnected={setIsConnected}
         setInitialSensorData={() => setSensorData(initialSensorData)}
-        onWifiScanResult={handleWifiScanResult}
       />
 
       <WifiConfigModal 
         isOpen={isWifiModalOpen}
         onClose={() => setIsWifiModalOpen(false)}
         onSave={handleSaveWifi}
-        onScan={handleScanWifi}
-        scanResults={wifiScanResults}
-        isScanningWifi={isScanningWifi}
       />
 
       {!isConnected ? (

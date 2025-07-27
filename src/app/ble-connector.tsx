@@ -83,21 +83,18 @@ const CONNECTION_TIMEOUT_MS = 15000;
 export interface BleConnectorRef {
     handleDisconnect: () => Promise<void>;
     sendWifiConfig: (ssid: string, psk: string) => Promise<void>;
-    scanWifiNetworks: () => Promise<void>;
 }
 
 interface BleConnectorProps {
   setSensorData: (data: SensorData) => void;
   setIsConnected: (isConnected: boolean) => void;
   setInitialSensorData: () => void;
-  onWifiScanResult: (ssids: string[]) => void;
 }
 
 export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>(({
   setSensorData,
   setIsConnected,
   setInitialSensorData,
-  onWifiScanResult
 }, ref) => {
   const { toast } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
@@ -255,22 +252,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
                       description: jsonData.message || 'Configuración enviada al dispositivo',
                       variant: jsonData.status === 'success' ? 'default' : 'destructive'
                   });
-              } else if (jsonData.type === 'wifi_scan_response') {
-                  console.log('📡 Respuesta escaneo WiFi:', jsonData);
-                  if (jsonData.status === 'success' && Array.isArray(jsonData.ssids)) {
-                      onWifiScanResult(jsonData.ssids);
-                      toast({
-                          title: 'Escaneo WiFi Completado',
-                          description: `Se encontraron ${jsonData.ssids.length} redes.`
-                      });
-                  } else {
-                      toast({
-                          title: 'Error de Escaneo WiFi',
-                          description: jsonData.message || 'El dispositivo no pudo escanear redes.',
-                          variant: 'destructive'
-                      });
-                      onWifiScanResult([]);
-                  }
               } else {
                   handleData(jsonData as SensorData);
               }
@@ -283,7 +264,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     } catch (error) {
       console.error('Error procesando notificación BLE:', error);
     }
-  }, [handleData, toast, onWifiScanResult]);
+  }, [handleData, toast]);
 
   const stopScanning = useCallback(async () => {
     if (!isScanning || !bleClientRef.current?.stopLEScan) return;
@@ -515,15 +496,9 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     toast({ title: 'Comando Enviado', description: 'Configuración WiFi enviada al dispositivo.' });
   };
 
-  const scanWifiNetworks = async () => {
-    await sendCommand({ type: 'wifi_scan' });
-    toast({ title: 'Escaneo Iniciado', description: 'Solicitando escaneo de redes WiFi al dispositivo...' });
-  };
-
   React.useImperativeHandle(ref, () => ({
       handleDisconnect,
       sendWifiConfig,
-      scanWifiNetworks
   }));
 
   const handleScanModalClose = async () => {
@@ -730,5 +705,3 @@ function createWebBluetoothAdapter(): BleClient {
     }
   };
 }
-
-    
