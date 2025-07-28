@@ -39,7 +39,7 @@ interface BleClient {
     deviceId: string,
     service: string,
     characteristic: string,
-    value: string,
+    value: string | DataView,
   ): Promise<void>;
   requestLEScan?(options: { services?: string[] }, onResult: (result: ScanResult) => void): Promise<void>;
   stopLEScan?(): Promise<void>;
@@ -80,6 +80,8 @@ const UART_TX_CHARACTERISTIC_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 const UART_RX_CHARACTERISTIC_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 const SCAN_DURATION_MS = 10000;
 const CONNECTION_TIMEOUT_MS = 15000;
+const CHUNK_SIZE = 20; // Tamaño del chunk en bytes
+const CHUNK_DELAY_MS = 100; // Retraso entre chunks
 
 export interface BleConnectorRef {
     handleDisconnect: () => Promise<void>;
@@ -301,8 +303,10 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   const connectToDevice = async (device: BleDevice) => {
     if (!bleClientRef.current || !isMountedRef.current) return;
 
-    if (connectedDeviceRef.current) {
-        console.warn("Ya hay un dispositivo conectado, ignorando intento de nueva conexión.");
+    // Evitar múltiples intentos de conexión simultáneos
+    if (isConnecting || connectedDeviceRef.current) {
+        const reason = isConnecting ? "conexión ya en progreso" : "ya hay un dispositivo conectado";
+        console.warn(`Intento de conexión ignorado: ${reason}.`);
         return;
     }
 
@@ -472,45 +476,56 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   };
   
   const sendCommand = async (command: object) => {
-    if (!bleClientRef.current || !connectedDeviceRef.current) {
-      toast({ variant: 'destructive', title: 'Error', description: 'No hay un dispositivo conectado.' });
-      return;
-    }
-     // Check for Web Bluetooth adapter and disconnected server
-    if (bleClientRef.current.isGattServerDisconnected && bleClientRef.current.isGattServerDisconnected()) {
-        toast({
-            variant: 'destructive',
-            title: 'Desconectado',
-            description: 'El dispositivo se ha desconectado. Por favor, vuelve a conectar.'
-        });
-        onDisconnected();
-        return;
-    }
-    
-    try {
+      if (!bleClientRef.current || !connectedDeviceRef.current) {
+          toast({ variant: 'destructive', title: 'Error', description: 'No hay un dispositivo conectado.' });
+          return;
+      }
+      if (bleClientRef.current.isGattServerDisconnected && bleClientRef.current.isGattServerDisconnected()) {
+          toast({
+              variant: 'destructive',
+              title: 'Desconectado',
+              description: 'El dispositivo se ha desconectado. Por favor, vuelve a conectar.'
+          });
+          onDisconnected();
+          return;
+      }
+      
       const jsonCommand = JSON.stringify(command) + '\n';
-      console.log('📤 Enviando comando:', jsonCommand);
-      await bleClientRef.current.write(
-          connectedDeviceRef.current.deviceId,
-          UART_SERVICE_UUID,
-          UART_RX_CHARACTERISTIC_UUID,
-          jsonCommand
-      );
-    } catch (error) {
-        console.error("Error enviando comando:", error);
-        const errorMessage = (error as Error).message;
+      const encoder = new TextEncoder();
+      const encodedData = encoder.encode(jsonCommand);
 
-        toast({ 
-          variant: 'destructive', 
-          title: 'Error de Envío', 
-          description: errorMessage 
-        });
+      console.log(`📤 Enviando comando (longitud: ${encodedData.byteLength} bytes):`, jsonCommand.trim());
 
-        if (errorMessage.toLowerCase().includes('disconnected')) {
-            onDisconnected();
-        }
-    }
+      try {
+          for (let i = 0; i < encodedData.byteLength; i += CHUNK_SIZE) {
+              const chunk = encodedData.slice(i, i + CHUNK_SIZE);
+              console.log(`📦 Enviando chunk #${i / CHUNK_SIZE + 1} (${chunk.byteLength} bytes)`);
+              
+              await bleClientRef.current.write(
+                  connectedDeviceRef.current.deviceId,
+                  UART_SERVICE_UUID,
+                  UART_RX_CHARACTERISTIC_UUID,
+                  chunk.buffer
+              );
+
+              // Añadir un pequeño retraso entre chunks para ayudar al receptor
+              await new Promise(resolve => setTimeout(resolve, CHUNK_DELAY_MS));
+          }
+          console.log("✅ Comando enviado completamente.");
+      } catch (error) {
+          console.error("Error enviando comando:", error);
+          const errorMessage = (error as Error).message;
+          toast({ 
+            variant: 'destructive', 
+            title: 'Error de Envío', 
+            description: errorMessage 
+          });
+          if (errorMessage.toLowerCase().includes('disconnected')) {
+              onDisconnected();
+          }
+      }
   };
+
 
   const sendWifiConfig = async (ssid: string, psk: string) => {
     await sendCommand({ type: 'wifi_config', ssid: ssid, password: psk });
@@ -530,11 +545,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
 
   const handleScanModalClose = async () => {
     if (isScanning && bleClientRef.current?.stopLEScan) {
-      await bleClientRef.current.stopLEScan();
-       if (scanTimeoutRef.current) {
-        clearTimeout(scanTimeoutRef.current);
-        scanTimeoutRef.current = null;
-      }
+      await stopScanning();
     }
     setIsScanModalOpen(false);
   };
@@ -631,12 +642,15 @@ BleConnector.displayName = "BleConnector";
 function createWebBluetoothAdapter(): BleClient {
   let webDevice: BluetoothDevice | null = null;
   let onDisconnectCallback: (() => void) | null = null;
+  let txCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  let rxCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
 
   const handleGattServerDisconnected = () => {
-    // No limpiar webDevice aquí para permitir la reconexión.
     if (onDisconnectCallback) {
       onDisconnectCallback();
     }
+    txCharacteristic = null;
+    rxCharacteristic = null;
   };
 
   return {
@@ -668,13 +682,7 @@ function createWebBluetoothAdapter(): BleClient {
     
     connect: async (deviceId, onDisconnect) => {
       if (!webDevice || webDevice.id !== deviceId) {
-        // Si no tenemos dispositivo, o el ID no coincide, podría ser una reconexión.
-        // Forzamos una nueva solicitud de dispositivo.
-        console.log("Dispositivo no disponible, solicitando de nuevo...");
-        await this.requestDevice({ acceptAllDevices: true, optionalServices: [UART_SERVICE_UUID] });
-        if (!webDevice || webDevice.id !== deviceId) {
-            throw new Error("Dispositivo no encontrado para conexión.");
-        }
+        throw new Error("Dispositivo no encontrado o ID no coincide.");
       }
       
       if (!webDevice.gatt) {
@@ -690,10 +698,13 @@ function createWebBluetoothAdapter(): BleClient {
       webDevice.addEventListener('gattserverdisconnected', handleGattServerDisconnected);
       
       try {
-        await webDevice.gatt.connect();
+        const server = await webDevice.gatt.connect();
+        const service = await server.getPrimaryService(UART_SERVICE_UUID);
+        txCharacteristic = await service.getCharacteristic(UART_TX_CHARACTERISTIC_UUID);
+        rxCharacteristic = await service.getCharacteristic(UART_RX_CHARACTERISTIC_UUID);
       } catch (error) {
         webDevice.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
-        throw new Error(`Error conectando: ${(error as Error).message}`);
+        throw new Error(`Error conectando y obteniendo servicios/características: ${(error as Error).message}`);
       }
     },
     
@@ -702,40 +713,37 @@ function createWebBluetoothAdapter(): BleClient {
       
       webDevice.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
       webDevice.gatt.disconnect();
-      // onDisconnected se llamará a través del evento 'gattserverdisconnected'
     },
     
     startNotifications: async (deviceId, serviceUUID, characteristicUUID, callback) => {
-      if (!webDevice?.gatt?.connected || webDevice.id !== deviceId) {
-        throw new Error("Dispositivo no conectado.");
+       if (!txCharacteristic) {
+        throw new Error("Característica TX no inicializada.");
       }
       
       try {
-        const service = await webDevice.gatt.getPrimaryService(serviceUUID);
-        const characteristic = await service.getCharacteristic(characteristicUUID);
-        
-        characteristic.addEventListener('characteristicvaluechanged', (event) => {
+        txCharacteristic.addEventListener('characteristicvaluechanged', (event) => {
           const target = event.target as BluetoothRemoteGATTCharacteristic;
           if (target.value) {
             callback(target.value);
           }
         });
         
-        await characteristic.startNotifications();
+        await txCharacteristic.startNotifications();
       } catch (error) {
         throw new Error(`Error iniciando notificaciones: ${(error as Error).message}`);
       }
     },
     
     write: async (deviceId, serviceUUID, characteristicUUID, value) => {
-        if (!webDevice?.gatt?.connected || webDevice.id !== deviceId) {
-            throw new Error("GATT Server is disconnected. Cannot perform GATT operations. (Re)connect first with device.gatt.connect.");
+        if (!rxCharacteristic) {
+            throw new Error("Característica RX no inicializada.");
+        }
+        if (!webDevice?.gatt?.connected) {
+             throw new Error("GATT Server is disconnected. Cannot perform GATT operations. (Re)connect first with device.gatt.connect.");
         }
         try {
-            const service = await webDevice.gatt.getPrimaryService(serviceUUID);
-            const characteristic = await service.getCharacteristic(characteristicUUID);
-            const encoder = new TextEncoder();
-            await characteristic.writeValue(encoder.encode(value));
+            const dataToWrite = typeof value === 'string' ? new TextEncoder().encode(value) : value;
+            await rxCharacteristic.writeValue(dataToWrite);
         } catch(error) {
             throw new Error(`Error escribiendo en característica: ${(error as Error).message}`);
         }
@@ -745,3 +753,5 @@ function createWebBluetoothAdapter(): BleClient {
     }
   };
 }
+
+    
