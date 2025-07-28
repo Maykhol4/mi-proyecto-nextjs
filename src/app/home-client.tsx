@@ -164,7 +164,7 @@ const WifiConfigModal: FC<{
                     <Button variant="outline" onClick={handleClose}>
                         Cancelar
                     </Button>
-                    <Button onClick={handleSave} disabled={!ssid.trim()}>
+                    <Button type="button" onClick={handleSave} disabled={!ssid.trim()}>
                         <Save className="mr-2 h-4 w-4" />
                         Guardar y Enviar
                     </Button>

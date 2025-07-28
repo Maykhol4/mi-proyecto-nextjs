@@ -375,6 +375,11 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       return;
     }
 
+    if (connectedDeviceRef.current) {
+      console.warn("Ya hay un dispositivo conectado, no se inicia nueva conexión.");
+      return;
+    }
+
     if (!bleClientRef.current.requestLEScan) {
       setIsConnecting(true);
       try {
