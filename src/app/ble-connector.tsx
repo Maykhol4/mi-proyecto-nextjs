@@ -39,7 +39,7 @@ interface BleClient {
     deviceId: string,
     service: string,
     characteristic: string,
-    value: string | DataView,
+    value: string | DataView | ArrayBuffer,
   ): Promise<void>;
   requestLEScan?(options: { services?: string[] }, onResult: (result: ScanResult) => void): Promise<void>;
   stopLEScan?(): Promise<void>;
@@ -137,8 +137,21 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
         
         if (Capacitor.isNativePlatform()) {
           // Plataforma nativa
-          const { BleClient } = await import('@capacitor-community/bluetooth-le');
-          bleClientRef.current = BleClient;
+          const { BleClient: NativeBleClient } = await import('@capacitor-community/bluetooth-le');
+          
+          // Adaptador para el cliente nativo
+          bleClientRef.current = {
+            ...NativeBleClient,
+            write: async (deviceId, service, characteristic, value) => {
+              let dataToWrite: string | DataView;
+              if (value instanceof ArrayBuffer) {
+                dataToWrite = new DataView(value);
+              } else {
+                dataToWrite = value;
+              }
+              return NativeBleClient.write(deviceId, service, characteristic, dataToWrite);
+            },
+          };
           
           try {
             if (bleClientRef.current.requestPermissions) {
@@ -753,5 +766,3 @@ function createWebBluetoothAdapter(): BleClient {
     }
   };
 }
-
-    
