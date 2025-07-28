@@ -113,6 +113,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
+  const isNativePlatform = useRef(false);
 
   // Cleanup
   useEffect(() => {
@@ -136,23 +137,9 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
         const { Capacitor } = await import('@capacitor/core');
         
         if (Capacitor.isNativePlatform()) {
-          // Plataforma nativa
-          const { BleClient: NativeBleClient } = await import('@capacitor-community/bluetooth-le');
-          
-          // Adaptador para el cliente nativo
-          bleClientRef.current = {
-            ...NativeBleClient,
-            write: async (deviceId, service, characteristic, value) => {
-              let dataToWrite: string | DataView;
-              if (value instanceof ArrayBuffer) {
-                // El plugin nativo espera un DataView, no un ArrayBuffer directamente
-                dataToWrite = new DataView(value);
-              } else {
-                dataToWrite = value;
-              }
-              return NativeBleClient.write(deviceId, service, characteristic, dataToWrite);
-            },
-          };
+          isNativePlatform.current = true;
+          const { BleClient } = await import('@capacitor-community/bluetooth-le');
+          bleClientRef.current = BleClient;
           
           try {
             if (bleClientRef.current.requestPermissions) {
@@ -195,6 +182,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
             });
           }
         } else {
+          isNativePlatform.current = false;
           // Plataforma web
           if (!navigator.bluetooth) {
             throw new Error('Web Bluetooth no es compatible con este navegador.');
@@ -512,14 +500,17 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
 
       try {
           for (let i = 0; i < encodedData.byteLength; i += CHUNK_SIZE) {
-              const chunk = encodedData.slice(i, i + CHUNK_SIZE);
-              console.log(`📦 Enviando chunk #${i / CHUNK_SIZE + 1} (${chunk.byteLength} bytes)`);
+              const chunkBuffer = encodedData.slice(i, i + CHUNK_SIZE);
+              console.log(`📦 Enviando chunk #${i / CHUNK_SIZE + 1} (${chunkBuffer.byteLength} bytes)`);
+
+              // El cliente nativo de Capacitor espera un DataView. La web espera un ArrayBuffer.
+              const dataToWrite = isNativePlatform.current ? new DataView(chunkBuffer.buffer) : chunkBuffer.buffer;
               
               await bleClientRef.current.write(
                   connectedDeviceRef.current.deviceId,
                   UART_SERVICE_UUID,
                   UART_RX_CHARACTERISTIC_UUID,
-                  chunk.buffer
+                  dataToWrite
               );
 
               // Añadir un pequeño retraso entre chunks para ayudar al receptor
@@ -767,5 +758,3 @@ function createWebBluetoothAdapter(): BleClient {
     }
   };
 }
-
-    
