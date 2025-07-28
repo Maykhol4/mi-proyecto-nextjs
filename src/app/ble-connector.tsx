@@ -301,6 +301,11 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   const connectToDevice = async (device: BleDevice) => {
     if (!bleClientRef.current || !isMountedRef.current) return;
 
+    if (connectedDeviceRef.current) {
+        console.warn("Ya hay un dispositivo conectado, ignorando intento de nueva conexión.");
+        return;
+    }
+
     setIsScanModalOpen(false);
     setIsConnecting(true);
 
@@ -483,7 +488,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     }
     
     try {
-      const jsonCommand = JSON.stringify(command);
+      const jsonCommand = JSON.stringify(command) + '\n';
       console.log('📤 Enviando comando:', jsonCommand);
       await bleClientRef.current.write(
           connectedDeviceRef.current.deviceId,
@@ -663,7 +668,13 @@ function createWebBluetoothAdapter(): BleClient {
     
     connect: async (deviceId, onDisconnect) => {
       if (!webDevice || webDevice.id !== deviceId) {
-        throw new Error("Dispositivo no encontrado para conexión.");
+        // Si no tenemos dispositivo, o el ID no coincide, podría ser una reconexión.
+        // Forzamos una nueva solicitud de dispositivo.
+        console.log("Dispositivo no disponible, solicitando de nuevo...");
+        await this.requestDevice({ acceptAllDevices: true, optionalServices: [UART_SERVICE_UUID] });
+        if (!webDevice || webDevice.id !== deviceId) {
+            throw new Error("Dispositivo no encontrado para conexión.");
+        }
       }
       
       if (!webDevice.gatt) {
