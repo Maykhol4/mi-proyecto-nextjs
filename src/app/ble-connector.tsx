@@ -145,6 +145,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
             write: async (deviceId, service, characteristic, value) => {
               let dataToWrite: string | DataView;
               if (value instanceof ArrayBuffer) {
+                // El plugin nativo espera un DataView, no un ArrayBuffer directamente
                 dataToWrite = new DataView(value);
               } else {
                 dataToWrite = value;
@@ -766,3 +767,5 @@ function createWebBluetoothAdapter(): BleClient {
     }
   };
 }
+
+    
