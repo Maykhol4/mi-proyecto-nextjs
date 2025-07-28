@@ -45,6 +45,7 @@ interface BleClient {
   stopLEScan?(): Promise<void>;
   requestPermissions?(): Promise<void>;
   isEnabled?(): Promise<{ value: boolean }>;
+  isGattServerDisconnected?(): boolean;
 }
 
 export interface SensorData {
@@ -247,7 +248,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
               const jsonData = JSON.parse(message);
               console.log('📦 Mensaje recibido:', jsonData);
               
-              if (jsonData.type === 'wifi_config_response' || jsonData.type === 'wifi_status' || jsonData.type === 'wifi_disconnect_response') {
+              if (jsonData.type && ['wifi_config_response', 'wifi_disconnect_response'].includes(jsonData.type)) {
                   toast({
                       title: 'Respuesta del Dispositivo',
                       description: jsonData.message || 'Comando procesado.',
@@ -466,7 +467,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       return;
     }
      // Check for Web Bluetooth adapter and disconnected server
-    if ('isGattServerDisconnected' in bleClientRef.current && bleClientRef.current.isGattServerDisconnected()) {
+    if (bleClientRef.current.isGattServerDisconnected && bleClientRef.current.isGattServerDisconnected()) {
         toast({
             variant: 'destructive',
             title: 'Desconectado',
