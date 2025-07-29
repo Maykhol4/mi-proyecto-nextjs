@@ -152,7 +152,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     safeSetConnectionStatus('Conectando');
     
     const topic = `aquadata/${deviceId}/data`;
-    console.log(`Intentando conectar a MQTT: ${MQTT_BROKER_URL}`);
+    console.log(`Intentando conectar a MQTT: ${MQTT_BROKER_URL} y suscribirse a ${topic}`);
 
     const client = mqtt.connect(MQTT_BROKER_URL, {
       // Configuraciones adicionales para mayor robustez

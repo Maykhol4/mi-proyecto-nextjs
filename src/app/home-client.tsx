@@ -206,7 +206,7 @@ const MqttConfigModal: FC<{
               id="device-id"
               value={deviceId}
               onChange={(e) => setDeviceId(e.target.value)}
-              placeholder="Ej: esp32-abcdef123456"
+              placeholder="Ej: aquadata-esp32-f0f5bdfbb448"
             />
           </div>
         </div>
