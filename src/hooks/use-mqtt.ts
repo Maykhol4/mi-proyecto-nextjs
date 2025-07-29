@@ -64,9 +64,14 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       if (receivedTopic === topic) {
         try {
           const messageStr = payload.toString();
-          const jsonData = JSON.parse(messageStr);
-          console.log('Mensaje MQTT recibido:', jsonData);
-          setSensorData(jsonData as SensorData);
+          // Añadida la verificación para evitar el error con payloads vacíos.
+          if (messageStr) {
+            const jsonData = JSON.parse(messageStr);
+            console.log('Mensaje MQTT recibido:', jsonData);
+            setSensorData(jsonData as SensorData);
+          } else {
+            console.warn('Mensaje MQTT vacío recibido y omitido.');
+          }
         } catch (error) {
           console.error('Error parseando mensaje MQTT:', error);
         }
