@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import mqtt, { MqttClient } from 'mqtt';
+import mqtt, { MqttClient, ISubscriptionGrant } from 'mqtt';
 import { useToast } from './use-toast';
 import { type SensorData } from '@/app/ble-connector';
 
@@ -48,10 +48,10 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     setConnectionStatus('Conectando');
     toast({ title: 'MQTT: Conectando...', description: `Intentando conectar a ${MQTT_BROKER_URL}` });
     
-    const topic = `aquadata/${deviceId}/data`;
+    const topic = deviceId;
     
     const client = mqtt.connect(MQTT_BROKER_URL, {
-      connectTimeout: 10000, // 10 segundos
+      connectTimeout: 10000,
       reconnectPeriod: 5000,
     });
     clientRef.current = client;
@@ -61,19 +61,20 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       setConnectionStatus('Conectado');
       toast({ title: 'MQTT: Conectado', description: 'Conexión con el broker exitosa.' });
       
-      client.subscribe(topic, { qos: 1 }, (err) => {
-        if (err) {
-          console.error('Error subscribing to topic:', err);
-          toast({
+      client.subscribe(topic, { qos: 1 }, (err, granted) => {
+        if (err || (granted && granted[0].qos > 2)) {
+          console.error('Error de suscripción o QoS denegada:', err, granted);
+           toast({
             title: "Error de Suscripción",
-            description: `No se pudo suscribir al topic: ${topic}`,
+            description: `El broker rechazó la suscripción al topic: ${topic}`,
             variant: "destructive",
           });
+          client.end();
         } else {
           console.log(`Suscrito exitosamente a: ${topic}`);
           toast({
             title: "Suscripción Exitosa",
-            description: `Escuchando datos de ${deviceId}`,
+            description: `Escuchando datos en ${topic}`,
           });
         }
       });

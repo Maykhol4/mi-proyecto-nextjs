@@ -179,13 +179,13 @@ const WifiConfigModal: FC<{
 const MqttConfigModal: FC<{
   isOpen: boolean;
   onClose: () => void;
-  onConnect: (deviceId: string) => void;
+  onConnect: (topic: string) => void;
 }> = ({ isOpen, onClose, onConnect }) => {
-  const [deviceId, setDeviceId] = useState('');
+  const [topic, setTopic] = useState('');
 
   const handleConnect = () => {
-    if (deviceId.trim()) {
-      onConnect(deviceId.trim());
+    if (topic.trim()) {
+      onConnect(topic.trim());
       onClose();
     }
   };
@@ -196,17 +196,17 @@ const MqttConfigModal: FC<{
         <DialogHeader>
           <DialogTitle>Conexión Online (MQTT)</DialogTitle>
           <DialogDescription>
-             Introduce el ID de tu dispositivo (p. ej. 'aquadata-esp32-...') para conectar vía MQTT.
+             Introduce el topic MQTT completo al que deseas suscribirte.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label htmlFor="device-id">ID del Dispositivo ESP32</Label>
+            <Label htmlFor="device-id">Topic MQTT Completo</Label>
             <Input
               id="device-id"
-              value={deviceId}
-              onChange={(e) => setDeviceId(e.target.value)}
-              placeholder="Ej: aquadata-esp32-f0f5bdfbb448"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="Ej: aquadata/aquadata-esp32-xxxxxxxx/data"
             />
           </div>
         </div>
@@ -214,7 +214,7 @@ const MqttConfigModal: FC<{
           <Button variant="outline" onClick={onClose}>
             Cancelar
           </Button>
-          <Button onClick={handleConnect} disabled={!deviceId.trim()}>
+          <Button onClick={handleConnect} disabled={!topic.trim()}>
             Conectar
           </Button>
         </DialogFooter>
