@@ -263,6 +263,18 @@ export default function HomeClient() {
     return 'border-l-gray-400';
   };
 
+  const getWifiStatus = () => {
+    if (mode === 'ble') {
+      const status = sensorData?.wifi_status;
+      if (status === 'connected') return { text: 'WiFi: Conectado', color: 'text-green-600' };
+      if (status === 'connecting') return { text: 'WiFi: Conectando...', color: 'text-yellow-600' };
+      return { text: 'WiFi: Desconectado', color: 'text-red-600' };
+    }
+    return null;
+  };
+
+  const wifiStatus = getWifiStatus();
+
   const handleDisconnect = () => {
     if (mode === 'ble') {
       bleConnectorRef.current?.handleDisconnect();
@@ -429,6 +441,12 @@ export default function HomeClient() {
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div className="flex items-center space-x-2"><CheckCircle className="w-5 h-5 text-green-500" /><span className="font-semibold">Estado:</span><span className="text-green-600">{sensorData.status}</span></div>
                   <div className="flex items-center space-x-2"><Activity className="w-5 h-5 text-primary" /><span className="font-semibold">Última lectura:</span><span className="text-primary">{sensorData.timestamp}</span></div>
+                  {wifiStatus && (
+                    <div className={`flex items-center space-x-2 ${wifiStatus.color}`}>
+                      <Wifi className="w-5 h-5" />
+                      <span className="font-semibold">{wifiStatus.text}</span>
+                    </div>
+                  )}
                   <div className="flex items-center space-x-2"><IterationCw className="w-5 h-5 text-primary" /><span className="font-semibold">Ciclo de simulación:</span><span className="text-primary">#{sensorData.simulation_cycle}</span></div>
                 </div>
               </CardContent>

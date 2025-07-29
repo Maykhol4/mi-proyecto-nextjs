@@ -60,6 +60,7 @@ export interface SensorData {
   simulation_cycle: number;
   type?: string;
   message?: string;
+  wifi_status?: 'connected' | 'disconnected' | 'connecting';
 }
 
 export const initialSensorData: SensorData = {
