@@ -8,38 +8,44 @@ import { type SensorData } from '@/app/ble-connector';
 type MqttStatus = 'Conectando' | 'Conectado' | 'Desconectado' | 'Error';
 
 const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
+const MQTT_TOPIC = 'aquadata/sensor-data';
 
-export function useMqtt(topic: string | null, enabled: boolean) {
+export function useMqtt(enabled: boolean) {
   const { toast } = useToast();
   const [connectionStatus, setConnectionStatus] = useState<MqttStatus>('Desconectado');
   const [sensorData, setSensorData] = useState<SensorData | null>(null);
   const clientRef = useRef<MqttClient | null>(null);
-  const isConnectingRef = useRef<boolean>(false);
+  const receivedDataBuffer = useRef('');
 
-  const safeJsonParse = (messageStr: string): Partial<SensorData> | null => {
+  const safeJsonParse = (messageStr: string): SensorData | null => {
     try {
-      // Directamente parseamos el JSON. La lógica de reconstrucción está en el 'on message'.
-      return JSON.parse(messageStr);
+      const data = JSON.parse(messageStr);
+      // Validar que el objeto parseado contenga al menos un campo esperado
+      if (data && typeof data.ph !== 'undefined') {
+        return data as SensorData;
+      }
+      return null;
     } catch (error) {
-      console.error('Error parsing JSON:', error, 'Message:', `"${messageStr}"`);
+      console.warn('Error parsing JSON:', error, 'Message:', `"${messageStr}"`);
       return null;
     }
   };
 
   useEffect(() => {
-    if (!enabled || !topic) {
+    if (!enabled) {
       if (clientRef.current) {
-        console.log('MQTT: Desconectando por deshabilitación o falta de topic.');
+        console.log('MQTT: Desconectando por deshabilitación.');
         clientRef.current.end(true);
+        clientRef.current = null;
+        setConnectionStatus('Desconectado');
       }
       return;
     }
 
-    if (clientRef.current || isConnectingRef.current) return;
+    if (clientRef.current) return;
 
-    isConnectingRef.current = true;
     setConnectionStatus('Conectando');
-    toast({ title: 'MQTT: Conectando...', description: `Intentando conectar a ${MQTT_BROKER_URL}` });
+    toast({ title: 'MQTT: Conectando...', description: `A ${MQTT_BROKER_URL}` });
     
     const client = mqtt.connect(MQTT_BROKER_URL, {
       connectTimeout: 10000,
@@ -48,57 +54,49 @@ export function useMqtt(topic: string | null, enabled: boolean) {
     clientRef.current = client;
 
     client.on('connect', () => {
-      isConnectingRef.current = false;
       setConnectionStatus('Conectado');
       toast({ title: 'MQTT: ¡Conectado!', description: 'Conexión con el broker exitosa.' });
       
-      client.subscribe(topic, { qos: 1 }, (err, granted) => {
-        if (err || (granted && granted[0].qos > 2)) {
-          console.error('Error de suscripción o QoS denegada:', err, granted);
+      client.subscribe(MQTT_TOPIC, { qos: 0 }, (err) => {
+        if (err) {
+          console.error('Error de suscripción:', err);
            toast({
             title: "Error de Suscripción",
-            description: `El broker rechazó la suscripción al topic.`,
+            description: `No se pudo suscribir a ${MQTT_TOPIC}.`,
             variant: "destructive",
           });
           client.end();
         } else {
-          console.log(`Suscrito exitosamente a: ${topic}`);
+          console.log(`Suscrito exitosamente a: ${MQTT_TOPIC}`);
           toast({
             title: "Suscripción Exitosa",
-            description: `Escuchando datos en ${topic}`,
+            description: `Escuchando datos del sensor.`,
           });
         }
       });
     });
 
     client.on('message', (receivedTopic, payload) => {
-      if (receivedTopic !== topic) return;
+      receivedDataBuffer.current += payload.toString();
       
-      const messageStr = payload?.toString();
-      if (!messageStr) return;
-      
-      const parsedData = safeJsonParse(messageStr);
-      if (parsedData) {
-        // SOLUCIÓN: Reconstruir el objeto de estado para asegurar que todos los campos se actualicen.
-        // Esto previene que solo un campo (como 'ph') se muestre si el objeto llega incompleto.
-        setSensorData(prevData => ({
-            ...(prevData || {}),
-            ph: parsedData.ph ?? prevData?.ph ?? null,
-            do_conc: parsedData.do_conc ?? prevData?.do_conc ?? null,
-            do_sat: parsedData.do_sat ?? prevData?.do_sat ?? null,
-            temp: parsedData.temp ?? prevData?.temp ?? null,
-            timestamp: parsedData.timestamp ?? prevData?.timestamp ?? '--:--:--',
-            status: parsedData.status ?? prevData?.status ?? '⚪',
-            readings_count: parsedData.readings_count ?? prevData?.readings_count,
-            errors_count: parsedData.errors_count ?? prevData?.errors_count,
-            simulation_cycle: parsedData.simulation_cycle ?? prevData?.simulation_cycle ?? 0,
-        }));
+      // Procesar todos los mensajes completos en el buffer
+      let lastNewline;
+      while ((lastNewline = receivedDataBuffer.current.indexOf('\n')) !== -1) {
+        const messageStr = receivedDataBuffer.current.substring(0, lastNewline);
+        receivedDataBuffer.current = receivedDataBuffer.current.substring(lastNewline + 1);
+
+        if (messageStr) {
+          const parsedData = safeJsonParse(messageStr);
+          if (parsedData) {
+            console.log('Datos recibidos y parseados:', parsedData);
+            setSensorData(parsedData);
+          }
+        }
       }
     });
 
     client.on('error', (error) => {
       console.error('MQTT Client Error:', error);
-      isConnectingRef.current = false;
       setConnectionStatus('Error');
       toast({
         title: "Error de Conexión MQTT",
@@ -110,14 +108,8 @@ export function useMqtt(topic: string | null, enabled: boolean) {
 
     client.on('close', () => {
       if (clientRef.current) {
-        isConnectingRef.current = false;
         setConnectionStatus('Desconectado');
         clientRef.current = null;
-        toast({
-          title: 'MQTT: Desconectado',
-          description: 'Se ha perdido la conexión con el broker.',
-          variant: 'destructive'
-        });
       }
     });
 
@@ -126,10 +118,9 @@ export function useMqtt(topic: string | null, enabled: boolean) {
         console.log('MQTT: Desconectando (limpieza de efecto).');
         clientRef.current.end(true);
         clientRef.current = null;
-        isConnectingRef.current = false;
       }
     };
-  }, [topic, enabled, toast]);
+  }, [enabled, toast]);
 
   return { connectionStatus, sensorData };
 }

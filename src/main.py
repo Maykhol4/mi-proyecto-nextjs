@@ -1,4 +1,4 @@
-# main.py - ESP32 con MicroPython - Versión Verificada y Robusta
+# main.py - ESP32 con MicroPython - Versión Robusta
 import network
 import uasyncio
 from umqtt.simple import MQTTClient
@@ -15,9 +15,7 @@ WIFI_PASSWORD = "29768387"
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 CLIENT_ID = f"aquadata-esp32-{ubinascii.hexlify(machine.unique_id()).decode()}"
-MQTT_STREAM_TOPIC = f"aquadata/{CLIENT_ID}/data/stream"
-MQTT_STATUS_TOPIC = f"aquadata/{CLIENT_ID}/status"
-
+MQTT_TOPIC = "aquadata/sensor-data"
 PUBLISH_INTERVAL_S = 5
 
 # --- ESTADO GLOBAL ---
@@ -57,18 +55,8 @@ def connect_to_mqtt():
     try:
         print(f"Conectando a MQTT: {MQTT_BROKER}...")
         mqtt_client = MQTTClient(CLIENT_ID, MQTT_BROKER, port=MQTT_PORT, keepalive=60)
-        
-        # Last Will and Testament: Notifica si el dispositivo se desconecta inesperadamente.
-        lwt_message = ujson.dumps({"status": "offline", "reason": "unexpected_disconnect"})
-        mqtt_client.set_last_will(MQTT_STATUS_TOPIC, lwt_message, retain=True)
-        
         mqtt_client.connect()
-        
-        # Publicar estado 'online'
-        online_message = ujson.dumps({"status": "online", "client_id": CLIENT_ID, "ip": wlan.ifconfig()[0]})
-        mqtt_client.publish(MQTT_STATUS_TOPIC, online_message, retain=True)
-        
-        print(f"MQTT conectado. Publicando en: {MQTT_STREAM_TOPIC}")
+        print(f"MQTT conectado. Publicando en: {MQTT_TOPIC}")
         return True
     except Exception as e:
         print(f"Error conectando a MQTT: {e}")
@@ -87,7 +75,7 @@ def simulate_sensor_data():
         errors_count['ph'] += 1
     
     ph_value = urandom.randint(650, 800) / 100.0
-    do_conc_value = urandom.randint(550, 850) / 100.0
+    do_value = urandom.randint(550, 850) / 100.0
     do_sat_value = urandom.randint(8500, 10500) / 100.0
     temp_value = urandom.randint(2100, 2450) / 100.0
     
@@ -95,9 +83,9 @@ def simulate_sensor_data():
     
     return {
         "ph": round(ph_value, 2),
-        "do_conc": round(do_conc_value, 1),
-        "do_sat": round(do_sat_value, 1),
-        "temp": round(temp_value, 1),
+        "dissolved_oxygen": round(do_value, 1),
+        "dissolved_oxygen_saturation": round(do_sat_value, 1),
+        "temperature": round(temp_value, 1),
         "timestamp": f"{current_time[3]:02}:{current_time[4]:02}:{current_time[5]:02}",
         "status": status,
         "readings_count": readings_count.copy(),
@@ -130,10 +118,8 @@ async def main_loop():
             if not is_mqtt_connected():
                 print("MQTT desconectado, reintentando...")
                 if mqtt_client:
-                    try:
-                        mqtt_client.disconnect()
-                    except:
-                        pass
+                    try: mqtt_client.disconnect()
+                    except: pass
                 mqtt_client = None
                 
                 if not connect_to_mqtt():
@@ -143,34 +129,27 @@ async def main_loop():
             sensor_data = simulate_sensor_data()
             message = ujson.dumps(sensor_data)
             
-            # Añadir delimitador de nueva línea para el frontend
+            # SOLUCIÓN: Añadir delimitador de nueva línea para el frontend
             message_with_delimiter = message + '\n'
             
             print(f"Publicando (Ciclo {simulation_cycle})")
-            mqtt_client.publish(MQTT_STREAM_TOPIC, message_with_delimiter, retain=False)
+            mqtt_client.publish(MQTT_TOPIC, message_with_delimiter, retain=False)
             
-            # Procesar mensajes entrantes y mantener conexión
-            mqtt_client.check_msg()
-
         except OSError as e:
             print(f"Error de red: {e}. Reiniciando conexiones...")
             if mqtt_client:
-                try:
-                    mqtt_client.disconnect()
-                except:
-                    pass
-                mqtt_client = None
+                try: mqtt_client.disconnect()
+                except: pass
+            mqtt_client = None
             wlan.disconnect()
             await uasyncio.sleep(2)
             
         except Exception as e:
             print(f"Error en el bucle principal: {e}")
             if mqtt_client:
-                try:
-                    mqtt_client.disconnect()
-                except:
-                    pass
-                mqtt_client = None
+                try: mqtt_client.disconnect()
+                except: pass
+            mqtt_client = None
             await uasyncio.sleep(5)
         
         await uasyncio.sleep(PUBLISH_INTERVAL_S)
@@ -182,17 +161,8 @@ if __name__ == "__main__":
         uasyncio.run(main_loop())
     except KeyboardInterrupt:
         print("\nPrograma detenido por el usuario.")
-        if mqtt_client:
-            try:
-                offline_message = ujson.dumps({"status": "offline", "reason": "manual_stop"})
-                mqtt_client.publish(MQTT_STATUS_TOPIC, offline_message, retain=True)
-                mqtt_client.disconnect()
-            except:
-                pass
     except Exception as e:
         print(f"Error fatal en el sistema: {e}")
         print("Reiniciando en 10 segundos...")
         utime.sleep(10)
         machine.reset()
-
-    

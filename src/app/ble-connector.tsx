@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Bluetooth, Search, BluetoothOff } from 'lucide-react';
+import { RefreshCw, Bluetooth, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 // Interfaces
@@ -54,7 +54,7 @@ export interface SensorData {
   dissolved_oxygen_saturation: number | null;
   temperature: number | null;
   timestamp: string;
-  status: '🟢' | '🟡' | '🔴' | string;
+  status: string;
   readings_count?: { ph: number; do: number };
   errors_count?: { ph: number; do: number };
   simulation_cycle: number;

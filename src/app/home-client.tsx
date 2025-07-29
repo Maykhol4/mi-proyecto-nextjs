@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, type FC, useRef, useCallback, useEffect } from 'react';
+import React, { useState, type FC, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -24,11 +24,8 @@ import {
   BluetoothOff,
   MoreVertical,
   ChevronDown,
-  RefreshCw,
-  Search,
   Power,
   WifiOff,
-  Info,
   Cloud,
 } from 'lucide-react';
 import type { SensorData, BleConnectorRef } from './ble-connector';
@@ -44,7 +41,6 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useIsMobile } from '@/hooks/use-mobile';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { useMqtt } from '@/hooks/use-mqtt';
 
@@ -184,8 +180,7 @@ export default function HomeClient() {
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
   const [mode, setMode] = useState<'ble' | 'mqtt' | 'disconnected'>('disconnected');
   
-  const MQTT_TOPIC = 'aquadata/sensor-data';
-  const { connectionStatus: mqttStatus, sensorData: mqttSensorData } = useMqtt(MQTT_TOPIC, mode === 'mqtt');
+  const { connectionStatus: mqttStatus, sensorData: mqttSensorData } = useMqtt(mode === 'mqtt');
 
   const bleConnectorRef = useRef<BleConnectorRef>(null);
   const isMobile = useIsMobile();
@@ -235,7 +230,7 @@ export default function HomeClient() {
         case 'Desconectado':
             return 'bg-red-600 hover:bg-red-700';
         default:
-            return 'bg-blue-600 hover:bg-blue-700';
+            return 'bg-gray-500 hover:bg-gray-600';
     }
   };
 
@@ -326,9 +321,9 @@ export default function HomeClient() {
                   <div><h1 className="text-xl font-bold text-gray-900">AQUADATA 2.0</h1><p className="text-sm text-muted-foreground">Monitor Web</p></div>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Badge variant={'default'} className={`flex items-center space-x-2 ${mode === 'ble' ? 'bg-green-600 hover:bg-green-700' : getMqttStatusBadge()}`}>
-                    {mode === 'ble' ? <BluetoothConnected className="w-4 h-4" /> : <Cloud className="w-4 h-4" />}
-                    <span>{mode === 'ble' ? 'Conectado (BLE)' : `MQTT: ${mqttStatus}`}</span>
+                  <Badge variant={'default'} className={`flex items-center space-x-2 ${mode === 'ble' ? 'bg-blue-600 hover:bg-blue-700' : getMqttStatusBadge()}`}>
+                    {mode === 'ble' ? (isConnected ? <BluetoothConnected className="w-4 h-4" /> : <Bluetooth className="w-4 h-4" />) : <Cloud className="w-4 h-4" />}
+                    <span>{mode === 'ble' ? (isConnected ? 'Conectado (BLE)' : 'Desconectado') : `MQTT: ${mqttStatus}`}</span>
                   </Badge>
                   
                   {isMobile ? (
@@ -339,15 +334,15 @@ export default function HomeClient() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        <DropdownMenuItem onSelect={() => setIsWifiModalOpen(true)} disabled={mode !== 'ble'}>
+                        <DropdownMenuItem onSelect={() => setIsWifiModalOpen(true)} disabled={mode !== 'ble' || !isConnected}>
                           <Settings className="mr-2 h-4 w-4" />
                           <span>Ajustes WiFi</span>
                         </DropdownMenuItem>
-                         <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')} disabled={mode !== 'ble'}>
+                         <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')} disabled={mode !== 'ble' || !isConnected}>
                           <WifiOff className="mr-2 h-4 w-4" />
                           <span>Desconectar WiFi</span>
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => handleControlCommand('restart')} disabled={mode !== 'ble'}>
+                        <DropdownMenuItem onSelect={() => handleControlCommand('restart')} disabled={mode !== 'ble' || !isConnected}>
                           <Power className="mr-2 h-4 w-4" />
                           <span>Reiniciar Dispositivo</span>
                         </DropdownMenuItem>
@@ -360,13 +355,13 @@ export default function HomeClient() {
                     </DropdownMenu>
                   ) : (
                     <>
-                      <Button onClick={() => setIsWifiModalOpen(true)} variant="outline" size="sm" disabled={mode !== 'ble'}>
+                      <Button onClick={() => setIsWifiModalOpen(true)} variant="outline" size="sm" disabled={mode !== 'ble' || !isConnected}>
                           <Settings className="mr-2 h-4 w-4" />
                           Ajustes
                       </Button>
                        <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" disabled={mode !== 'ble'}>
+                          <Button variant="outline" size="sm" disabled={mode !== 'ble' || !isConnected}>
                             Comandos
                             <ChevronDown className="ml-2 h-4 w-4" />
                           </Button>
@@ -397,7 +392,7 @@ export default function HomeClient() {
             <Card className={`mb-8 border-l-4 ${getStatusColor(sensorData.status)}`}>
               <CardContent className="p-6">
                 <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center space-x-2"><CheckCircle className="w-5 h-5 text-green-500" /><span className="font-semibold">Estado:</span><span className="text-green-600">{sensorData.status}</span></div>
+                  <div className="flex items-center space-x-2"><CheckCircle className="w-5 h-5 text-green-500" /><span className="font-semibold">Estado:</span><span className="text-green-600">{sensorData.status || 'N/A'}</span></div>
                   <div className="flex items-center space-x-2"><Activity className="w-5 h-5 text-primary" /><span className="font-semibold">Última lectura:</span><span className="text-primary">{sensorData.timestamp}</span></div>
                   {wifiStatus && (
                     <div className={`flex items-center space-x-2 ${wifiStatus.color}`}>
