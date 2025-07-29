@@ -46,6 +46,7 @@ interface BleClient {
   requestPermissions?(): Promise<void>;
   isEnabled?(): Promise<{ value: boolean }>;
   isGattServerDisconnected?(): boolean;
+  getConnectedDevices?(services: string[]): Promise<BleDevice[]>;
 }
 
 export interface SensorData {
@@ -84,6 +85,7 @@ const SCAN_DURATION_MS = 10000;
 const CONNECTION_TIMEOUT_MS = 15000;
 const CHUNK_SIZE = 20; // Tamaño del chunk en bytes
 const CHUNK_DELAY_MS = 100; // Retraso entre chunks
+const NATIVE_CONNECTION_MONITOR_INTERVAL_MS = 3000;
 
 export interface BleConnectorRef {
     handleDisconnect: () => Promise<void>;
@@ -114,6 +116,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   const receivedDataBuffer = useRef('');
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionMonitorIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
   const isNativePlatform = useRef(false);
 
@@ -124,6 +127,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       isMountedRef.current = false;
       if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
       if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
+      if (connectionMonitorIntervalRef.current) clearInterval(connectionMonitorIntervalRef.current);
       if (connectedDeviceRef.current && bleClientRef.current) {
         bleClientRef.current.disconnect(connectedDeviceRef.current.deviceId).catch(console.error);
       }
@@ -218,6 +222,10 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
 
   const onDisconnected = useCallback(() => {
     if (!isMountedRef.current) return;
+    if (connectionMonitorIntervalRef.current) {
+      clearInterval(connectionMonitorIntervalRef.current);
+      connectionMonitorIntervalRef.current = null;
+    }
     connectedDeviceRef.current = null;
     setIsConnected(false);
     setIsConnecting(false);
@@ -254,15 +262,23 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
               const jsonData = JSON.parse(message);
               console.log('📦 Mensaje recibido:', jsonData);
               
-              if (jsonData.type && ['wifi_config_response', 'wifi_disconnect_response'].includes(jsonData.type)) {
+              // Lógica Mejorada: Procesar todos los mensajes
+              
+              // 1. Comprobar si es una respuesta a un comando y mostrar un toast
+              if (jsonData.type && ['wifi_config_response', 'wifi_disconnect_response', 'restart_response'].includes(jsonData.type)) {
                   toast({
                       title: 'Respuesta del Dispositivo',
                       description: jsonData.message || 'Comando procesado.',
                       variant: jsonData.status === 'success' ? 'default' : 'destructive'
                   });
-              } else {
+              }
+              
+              // 2. Comprobar si es un paquete de datos de sensor y actualizar la UI
+              // Un paquete de datos de sensor tiene la propiedad 'ph' o 'timestamp'.
+              if (typeof jsonData.ph !== 'undefined' || typeof jsonData.timestamp !== 'undefined') {
                   handleData(jsonData as SensorData);
               }
+
             } catch (parseError) {
               console.warn('Error parseando JSON:', parseError, 'Mensaje:', `"${message}"`);
             }
@@ -303,6 +319,29 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     // Forzar reseteo de estado independientemente del resultado
     onDisconnected();
   }, [onDisconnected]);
+
+  const startConnectionMonitor = (deviceId: string) => {
+    if (connectionMonitorIntervalRef.current) {
+      clearInterval(connectionMonitorIntervalRef.current);
+    }
+    
+    connectionMonitorIntervalRef.current = setInterval(async () => {
+      if (!bleClientRef.current?.getConnectedDevices || !isMountedRef.current) return;
+      
+      try {
+        const connectedDevices = await bleClientRef.current.getConnectedDevices([UART_SERVICE_UUID]);
+        const isStillConnected = connectedDevices.some(d => d.deviceId === deviceId);
+
+        if (!isStillConnected) {
+          console.warn(`Monitor: Dispositivo ${deviceId} no encontrado. Disparando desconexión.`);
+          onDisconnected();
+        }
+      } catch (error) {
+        console.error("Error en el monitor de conexión:", error);
+        onDisconnected();
+      }
+    }, NATIVE_CONNECTION_MONITOR_INTERVAL_MS);
+  };
 
   const connectToDevice = async (device: BleDevice) => {
     if (!bleClientRef.current || !isMountedRef.current) return;
@@ -353,13 +392,17 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
         clearTimeout(connectionTimeoutRef.current);
         connectionTimeoutRef.current = null;
       }
-
+      
       if (isMountedRef.current) {
         setIsConnected(true);
         toast({ 
           title: '¡Conectado!', 
           description: `Conectado exitosamente a ${device.name || device.deviceId}.` 
         });
+
+        if (isNativePlatform.current) {
+          startConnectionMonitor(device.deviceId);
+        }
       }
     } catch (error) {
       console.error('Error en conexión:', error);
