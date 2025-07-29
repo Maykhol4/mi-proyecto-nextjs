@@ -18,19 +18,12 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
 
   const safeJsonParse = (messageStr: string): SensorData | null => {
     try {
-      if (!messageStr || !messageStr.trim()) return null;
-      const parsed = JSON.parse(messageStr.trim()) as SensorData;
-      if (typeof parsed !== 'object' || parsed === null) {
-        console.warn('Parsed data is not an object:', parsed);
-        return null;
-      }
-      return parsed;
+      return JSON.parse(messageStr);
     } catch (error) {
       console.error('Error parsing JSON:', error, 'Message:', messageStr);
       return null;
     }
   };
-
 
   useEffect(() => {
     if (!enabled || !deviceId) {
@@ -48,6 +41,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     setConnectionStatus('Conectando');
     toast({ title: 'MQTT: Conectando...', description: `Intentando conectar a ${MQTT_BROKER_URL}` });
     
+    // El 'deviceId' ahora es el topic completo.
     const topic = deviceId;
     
     const client = mqtt.connect(MQTT_BROKER_URL, {
