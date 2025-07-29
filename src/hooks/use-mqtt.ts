@@ -7,7 +7,7 @@ import { type SensorData } from '@/app/ble-connector';
 
 type MqttStatus = 'Conectando' | 'Conectado' | 'Desconectado' | 'Error';
 
-const MQTT_BROKER_URL = 'ws://broker.hivemq.com:8000/mqtt'; // CORREGIDO: WebSocket no seguro
+const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt'; // CORREGIDO: Usar WebSocket Seguro (WSS)
 const MESSAGE_DELIMITER = '\n'; // Delimitador para mensajes completos
 
 export function useMqtt(deviceId: string | null, enabled: boolean) {
