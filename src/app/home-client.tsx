@@ -196,7 +196,7 @@ const MqttConfigModal: FC<{
         <DialogHeader>
           <DialogTitle>Conexión Online (MQTT)</DialogTitle>
           <DialogDescription>
-            Introduce el ID de tu dispositivo ESP32 para conectar vía MQTT.
+            Introduce el ID completo de tu dispositivo ESP32 (incluyendo el prefijo) para conectar vía MQTT.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">

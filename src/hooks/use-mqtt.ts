@@ -66,7 +66,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     isConnectingRef.current = true;
     safeSetConnectionStatus('Conectando');
     
-    // El topic correcto que contiene el flujo de datos en tiempo real
+    // CORRECCIÓN FINAL: Construir el topic exactamente como lo hace el ESP32
     const topic = `aquadata/${deviceId}/data/stream`;
     
     const client = mqtt.connect(MQTT_BROKER_URL, {
@@ -95,8 +95,8 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
         } else {
           console.log(`Suscrito exitosamente a: ${topic}`);
           toast({
-            title: "Conectado a MQTT",
-            description: `Escuchando datos de ${deviceId}`,
+            title: "Conectado y Escuchando",
+            description: `Esperando datos de ${deviceId}`,
           });
         }
       });
