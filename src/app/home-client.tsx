@@ -176,68 +176,22 @@ const WifiConfigModal: FC<{
     )
 }
 
-const MqttConfigModal: FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  onConnect: (topic: string) => void;
-}> = ({ isOpen, onClose, onConnect }) => {
-  const [topic, setTopic] = useState('');
-
-  const handleConnect = () => {
-    if (topic.trim()) {
-      onConnect(topic.trim());
-      onClose();
-    }
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Conexión Online (MQTT)</DialogTitle>
-          <DialogDescription>
-             Introduce el topic MQTT completo al que deseas suscribirte.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="device-id">Topic MQTT Completo</Label>
-            <Input
-              id="device-id"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="Ej: aquadata/aquadata-esp32-xxxxxxxx/data"
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button onClick={handleConnect} disabled={!topic.trim()}>
-            Conectar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-};
-
 
 // --- Main UI Component ---
 export default function HomeClient() {
   const [bleSensorData, setBleSensorData] = useState<SensorData>(initialSensorData);
   const [isConnected, setIsConnected] = useState(false);
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
-  const [isMqttModalOpen, setIsMqttModalOpen] = useState(false);
   const [mode, setMode] = useState<'ble' | 'mqtt' | 'disconnected'>('disconnected');
-  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [mqttTopic, setMqttTopic] = useState<string | null>(null);
 
   const bleConnectorRef = useRef<BleConnectorRef>(null);
   const isMobile = useIsMobile();
   const { toast } = useToast();
+  
+  const MQTT_TOPIC = 'aquadata/sensor-data';
 
-  const { connectionStatus: mqttStatus, sensorData: mqttSensorData } = useMqtt(deviceId, mode === 'mqtt');
+  const { connectionStatus: mqttStatus, sensorData: mqttSensorData } = useMqtt(mqttTopic, mode === 'mqtt');
 
   const sensorData = mode === 'mqtt' ? (mqttSensorData || initialSensorData) : bleSensorData;
 
@@ -294,7 +248,7 @@ export default function HomeClient() {
       bleConnectorRef.current?.handleDisconnect();
     }
     setMode('disconnected');
-    setDeviceId(null);
+    setMqttTopic(null);
     setBleSensorData(initialSensorData);
     setIsConnected(false);
   };
@@ -313,8 +267,8 @@ export default function HomeClient() {
     bleConnectorRef.current?.sendControlCommand(command);
   }
 
-  const handleMqttConnect = (id: string) => {
-    setDeviceId(id);
+  const handleMqttConnect = () => {
+    setMqttTopic(MQTT_TOPIC);
     setMode('mqtt');
   };
 
@@ -340,12 +294,6 @@ export default function HomeClient() {
         onSave={handleSaveWifi}
       />
       
-      <MqttConfigModal
-        isOpen={isMqttModalOpen}
-        onClose={() => setIsMqttModalOpen(false)}
-        onConnect={handleMqttConnect}
-      />
-
       {mode === 'disconnected' ? (
         // --- Disconnected State UI ---
         <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-blue-800 flex items-center justify-center p-4">
@@ -358,7 +306,7 @@ export default function HomeClient() {
             </CardHeader>
             <CardContent className="space-y-6">
                 <div id="ble-actions-container" className="text-center space-y-4"></div>
-                 <Button onClick={() => setIsMqttModalOpen(true)} className="w-full bg-green-600 hover:bg-green-700">
+                 <Button onClick={handleMqttConnect} className="w-full bg-green-600 hover:bg-green-700">
                     <Cloud className="mr-2 h-4 w-4" />
                     Conectar Online (MQTT)
                   </Button>
