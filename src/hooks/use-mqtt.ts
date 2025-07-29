@@ -22,7 +22,19 @@ export function useMqtt(enabled: boolean) {
       const data = JSON.parse(messageStr);
       // Validar que el objeto parseado contenga al menos un campo esperado
       if (data && typeof data.ph !== 'undefined') {
-        return data as SensorData;
+        // Aseguramos que los campos coincidan con la interfaz SensorData
+        return {
+          ph: data.ph,
+          dissolved_oxygen: data.dissolved_oxygen,
+          oxygen_saturation: data.oxygen_saturation,
+          temperature: data.temperature,
+          timestamp: data.timestamp,
+          status: data.status,
+          readings_count: data.readings_count,
+          errors_count: data.errors_count,
+          simulation_cycle: data.simulation_cycle,
+          wifi_status: data.wifi_status
+        };
       }
       return null;
     } catch (error) {

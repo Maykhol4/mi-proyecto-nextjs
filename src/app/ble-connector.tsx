@@ -73,6 +73,7 @@ export const initialSensorData: SensorData = {
   readings_count: { ph: 0, do: 0 },
   errors_count: { ph: 0, do: 0 },
   simulation_cycle: 0,
+  wifi_status: 'disconnected',
 };
 
 // Constantes
