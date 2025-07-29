@@ -42,7 +42,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     }
   }, []);
 
-  // Función robusta para parsear mensajes JSON
+  // Función robusta para parsear mensajes JSON con detección de múltiples mensajes
   const safeJsonParse = useCallback((messageStr: string): SensorData | null => {
     try {
       // Validaciones múltiples antes del parse
@@ -57,9 +57,29 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
         return null;
       }
       
+      // NUEVO: Detectar múltiples JSONs concatenados
+      if (trimmedMessage.indexOf('}{') !== -1) {
+        console.warn('Mensaje MQTT contiene múltiples JSONs concatenados, usando el primero');
+        const firstJsonEnd = trimmedMessage.indexOf('}{') + 1;
+        const firstJson = trimmedMessage.substring(0, firstJsonEnd);
+        return safeJsonParse(firstJson); // Recursivo para el primer JSON
+      }
+      
       // Verificar que al menos parece JSON (empieza con { o [)
       if (!trimmedMessage.startsWith('{') && !trimmedMessage.startsWith('[')) {
         console.warn('Mensaje MQTT no parece ser JSON válido:', trimmedMessage.substring(0, 50));
+        return null;
+      }
+      
+      // NUEVO: Verificar que termina correctamente
+      if (trimmedMessage.startsWith('{') && !trimmedMessage.endsWith('}')) {
+        console.warn('Mensaje MQTT JSON aparenta estar truncado:', trimmedMessage.substring(0, 50));
+        return null;
+      }
+      
+      // NUEVO: Verificar tamaño razonable (evitar mensajes extremadamente largos)
+      if (trimmedMessage.length > 2048) {
+        console.warn(`Mensaje MQTT muy largo (${trimmedMessage.length} chars), posible corrupción`);
         return null;
       }
       
@@ -71,15 +91,43 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
         return null;
       }
       
+      // NUEVO: Validar que tiene la estructura esperada de SensorData
+      if (typeof jsonData === 'object' && jsonData !== null) {
+        const requiredFields = ['ph', 'do_conc', 'temp'];
+        const hasRequiredFields = requiredFields.some(field => field in jsonData);
+        
+        if (!hasRequiredFields) {
+          console.warn('Mensaje MQTT no contiene campos de sensor esperados:', Object.keys(jsonData));
+          return null;
+        }
+      }
+      
       return jsonData as SensorData;
       
     } catch (error) {
       // Manejo más detallado del error
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      
+      // NUEVO: Identificar tipo específico de error JSON
+      let errorType = 'unknown';
+      if (error instanceof SyntaxError) {
+        if (errorMessage.includes('Unexpected end')) {
+          errorType = 'truncated_json';
+        } else if (errorMessage.includes('Unexpected token')) {
+          errorType = 'malformed_json';
+        } else {
+          errorType = 'syntax_error';
+        }
+      }
+      
       console.error('Error parseando mensaje MQTT:', {
+        errorType,
         error: errorMessage,
-        message: messageStr.substring(0, 100), // Solo los primeros 100 caracteres para debug
-        messageLength: messageStr.length
+        message: messageStr.substring(0, 200), // Más caracteres para debug
+        messageLength: messageStr.length,
+        startsWithBrace: messageStr.startsWith('{'),
+        endsWithBrace: messageStr.endsWith('}'),
+        containsMultiple: messageStr.indexOf('}{') !== -1
       });
       return null;
     }
