@@ -7,6 +7,7 @@ import { type SensorData } from '@/app/ble-connector';
 
 type MqttStatus = 'Conectando' | 'Conectado' | 'Desconectado' | 'Error';
 
+// CONSTANTES MQTT - Cambia esto cuando migres a un broker de producción
 const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const MQTT_TOPIC = 'aquadata/sensor-data';
 
