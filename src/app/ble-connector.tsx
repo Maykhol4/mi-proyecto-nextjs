@@ -51,7 +51,7 @@ interface BleClient {
 export interface SensorData {
   ph: number | null;
   dissolved_oxygen: number | null;
-  dissolved_oxygen_saturation: number | null;
+  oxygen_saturation: number | null;
   temperature: number | null;
   timestamp: string;
   status: string;
@@ -66,7 +66,7 @@ export interface SensorData {
 export const initialSensorData: SensorData = {
   ph: null,
   dissolved_oxygen: null,
-  dissolved_oxygen_saturation: null,
+  oxygen_saturation: null,
   temperature: null,
   timestamp: '--:--:--',
   status: '⚪',

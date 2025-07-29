@@ -99,6 +99,46 @@ const SensorCard: FC<{
 };
 
 
+const MqttConfigModal: FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onConnect: () => void;
+}> = ({ isOpen, onClose, onConnect }) => {
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center space-x-2">
+            <Cloud className="w-5 h-5" />
+            <span>Conexión al Servidor MQTT</span>
+          </DialogTitle>
+          <DialogDescription>
+            La aplicación se conectará al topic MQTT preconfigurado para recibir los datos de tu dispositivo.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2 text-sm text-muted-foreground">
+            <p>Se utilizará la siguiente configuración:</p>
+            <ul className="list-disc pl-5 space-y-1 bg-muted p-3 rounded-md">
+                <li><span className="font-semibold">Broker:</span> wss://broker.hivemq.com:8884/mqtt</li>
+                <li><span className="font-semibold">Topic:</span> aquadata/sensor-data</li>
+            </ul>
+            <p>Asegúrate de que tu dispositivo ESP32 esté publicando los datos en este topic.</p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={onConnect}>
+            <Cloud className="mr-2 h-4 w-4" />
+            Confirmar y Conectar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+
 const WifiConfigModal: FC<{
     isOpen: boolean;
     onClose: () => void;
@@ -178,6 +218,7 @@ export default function HomeClient() {
   const [bleSensorData, setBleSensorData] = useState<SensorData>(initialSensorData);
   const [isConnected, setIsConnected] = useState(false);
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
+  const [isMqttModalOpen, setIsMqttModalOpen] = useState(false);
   const [mode, setMode] = useState<'ble' | 'mqtt' | 'disconnected'>('disconnected');
   
   const { connectionStatus: mqttStatus, sensorData: mqttSensorData } = useMqtt(mode === 'mqtt');
@@ -200,7 +241,7 @@ export default function HomeClient() {
   const phStatus = getSensorStatus(sensorData.ph, 6.0, 9.0, 6.5, 8.5);
   const doStatus = getSensorStatus(sensorData.dissolved_oxygen, 4.0, undefined, 6.0, undefined);
   const tempStatus = getSensorStatus(sensorData.temperature, 15, 30, 18, 28);
-  const satStatus = getSensorStatus(sensorData.dissolved_oxygen_saturation, 80, 120, 90, 110);
+  const satStatus = getSensorStatus(sensorData.oxygen_saturation, 80, 120, 90, 110);
   
   const getStatusColor = (status?: string) => {
     if (typeof status !== 'string') return 'border-l-gray-400';
@@ -261,6 +302,7 @@ export default function HomeClient() {
 
   const handleMqttConnect = () => {
     setMode('mqtt');
+    setIsMqttModalOpen(false);
   };
 
   const handleBleConnect = (connected: boolean) => {
@@ -285,6 +327,12 @@ export default function HomeClient() {
         onSave={handleSaveWifi}
       />
       
+      <MqttConfigModal
+        isOpen={isMqttModalOpen}
+        onClose={() => setIsMqttModalOpen(false)}
+        onConnect={handleMqttConnect}
+      />
+
       {mode === 'disconnected' ? (
         // --- Disconnected State UI ---
         <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-blue-800 flex items-center justify-center p-4">
@@ -297,7 +345,7 @@ export default function HomeClient() {
             </CardHeader>
             <CardContent className="space-y-6">
                 <div id="ble-actions-container" className="text-center space-y-4"></div>
-                 <Button onClick={handleMqttConnect} className="w-full bg-green-600 hover:bg-green-700">
+                 <Button onClick={() => setIsMqttModalOpen(true)} className="w-full bg-green-600 hover:bg-green-700">
                     <Cloud className="mr-2 h-4 w-4" />
                     Conectar Online (MQTT)
                   </Button>
@@ -408,7 +456,7 @@ export default function HomeClient() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <SensorCard icon={<TestTube className="w-5 h-5 text-blue-600" />} title="pH del Agua" value={sensorData.ph} unit="" description="Unidades de pH (6.5-8.5 óptimo)" status={phStatus} />
                 <SensorCard icon={<Droplets className="w-5 h-5 text-cyan-600" />} title="Oxígeno Disuelto" value={sensorData.dissolved_oxygen} unit="mg/L" description=">6.0 óptimo" status={doStatus} />
-                <SensorCard icon={<TrendingUp className="w-5 h-5 text-purple-600" />} title="Saturación O₂" value={sensorData.dissolved_oxygen_saturation} unit="%" description="80-120% óptimo" status={satStatus} />
+                <SensorCard icon={<TrendingUp className="w-5 h-5 text-purple-600" />} title="Saturación O₂" value={sensorData.oxygen_saturation} unit="%" description="80-120% óptimo" status={satStatus} />
                 <SensorCard icon={<Thermometer className="w-5 h-5 text-orange-600" />} title="Temperatura" value={sensorData.temperature} unit="°C" description="18-28°C óptimo" status={tempStatus} />
             </div>
 
