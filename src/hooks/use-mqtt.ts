@@ -15,15 +15,8 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
   const [sensorData, setSensorData] = useState<SensorData | null>(null);
   const clientRef = useRef<MqttClient | null>(null);
   const isConnectingRef = useRef<boolean>(false);
-  const isMountedRef = useRef<boolean>(true);
 
-  const safeSetConnectionStatus = useCallback((status: MqttStatus) => {
-    if (isMountedRef.current) {
-      setConnectionStatus(status);
-    }
-  }, []);
-  
-  const safeJsonParse = useCallback((messageStr: string): SensorData | null => {
+  const safeJsonParse = (messageStr: string): SensorData | null => {
     try {
       if (!messageStr || !messageStr.trim()) return null;
       const parsed = JSON.parse(messageStr.trim()) as SensorData;
@@ -36,55 +29,39 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       console.error('Error parsing JSON:', error, 'Message:', messageStr);
       return null;
     }
-  }, []);
-
-
-  const cleanupConnection = useCallback(() => {
-    if (clientRef.current) {
-      const client = clientRef.current;
-      clientRef.current = null;
-      isConnectingRef.current = false;
-      client.removeAllListeners();
-      if (client.connected) {
-        client.end(true, () => console.log('MQTT client disconnected.'));
-      }
-    }
-  }, []);
+  };
 
 
   useEffect(() => {
-    isMountedRef.current = true;
-    
     if (!enabled || !deviceId) {
-      cleanupConnection();
-      safeSetConnectionStatus('Desconectado');
+      if (clientRef.current) {
+        clientRef.current.end(true);
+        clientRef.current = null;
+        setConnectionStatus('Desconectado');
+      }
       return;
     }
 
     if (clientRef.current || isConnectingRef.current) return;
 
     isConnectingRef.current = true;
-    safeSetConnectionStatus('Conectando');
+    setConnectionStatus('Conectando');
+    toast({ title: 'MQTT: Conectando...', description: `Intentando conectar a ${MQTT_BROKER_URL}` });
     
-    // CORRECCIÓN FINAL: Construir el topic exactamente como lo hace el ESP32
-    const topic = `aquadata/${deviceId}/data/stream`;
+    const topic = `aquadata/${deviceId}/data`;
     
     const client = mqtt.connect(MQTT_BROKER_URL, {
-      connectTimeout: 30000,
+      connectTimeout: 10000, // 10 segundos
       reconnectPeriod: 5000,
-      keepalive: 60,
-      clean: true
     });
     clientRef.current = client;
 
     client.on('connect', () => {
-      if (!isMountedRef.current) return;
-      
-      console.log('Connected to MQTT broker');
       isConnectingRef.current = false;
-      safeSetConnectionStatus('Conectado');
+      setConnectionStatus('Conectado');
+      toast({ title: 'MQTT: Conectado', description: 'Conexión con el broker exitosa.' });
       
-      client.subscribe(topic, { qos: 0 }, (err) => {
+      client.subscribe(topic, { qos: 1 }, (err) => {
         if (err) {
           console.error('Error subscribing to topic:', err);
           toast({
@@ -95,55 +72,56 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
         } else {
           console.log(`Suscrito exitosamente a: ${topic}`);
           toast({
-            title: "Conectado y Escuchando",
-            description: `Esperando datos de ${deviceId}`,
+            title: "Suscripción Exitosa",
+            description: `Escuchando datos de ${deviceId}`,
           });
         }
       });
     });
 
     client.on('message', (receivedTopic, payload) => {
-      if (!isMountedRef.current || receivedTopic !== topic) return;
+      if (receivedTopic !== topic) return;
       
       const messageStr = payload?.toString();
       if (!messageStr) return;
 
       const parsedData = safeJsonParse(messageStr);
-      if(parsedData && isMountedRef.current) {
-          console.log('MQTT message successfully processed:', parsedData);
-          setSensorData(parsedData);
+      if(parsedData) {
+        setSensorData(parsedData);
       }
     });
 
     client.on('error', (error) => {
       console.error('MQTT Client Error:', error);
-      if (isMountedRef.current) {
-        safeSetConnectionStatus('Error');
+      isConnectingRef.current = false;
+      setConnectionStatus('Error');
+      toast({
+        title: "Error de Conexión MQTT",
+        description: error.message || "No se pudo conectar al broker.",
+        variant: "destructive",
+      });
+      client.end();
+    });
+
+    client.on('close', () => {
+      if (connectionStatus !== 'Desconectado') {
+        setConnectionStatus('Desconectado');
         toast({
-          title: "Error de Conexión MQTT",
-          description: "No se pudo conectar al broker MQTT.",
-          variant: "destructive",
+          title: 'MQTT: Desconectado',
+          description: 'Se ha perdido la conexión con el broker.',
+          variant: 'destructive'
         });
       }
     });
 
-    client.on('close', () => {
-      if (isMountedRef.current) {
-        safeSetConnectionStatus('Desconectado');
-      }
-    });
-
     return () => {
-      isMountedRef.current = false;
-      cleanupConnection();
+      if (clientRef.current) {
+        clientRef.current.end(true);
+        clientRef.current = null;
+      }
+      isConnectingRef.current = false;
     };
-  }, [deviceId, enabled, toast, cleanupConnection, safeSetConnectionStatus, safeJsonParse]);
-
-  useEffect(() => {
-    return () => { 
-      isMountedRef.current = false; 
-    };
-  }, []);
+  }, [deviceId, enabled, toast, connectionStatus]);
 
   return { connectionStatus, sensorData };
 }

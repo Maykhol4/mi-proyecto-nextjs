@@ -196,7 +196,7 @@ const MqttConfigModal: FC<{
         <DialogHeader>
           <DialogTitle>Conexión Online (MQTT)</DialogTitle>
           <DialogDescription>
-            Introduce el ID completo de tu dispositivo ESP32 (incluyendo el prefijo) para conectar vía MQTT.
+             Introduce el ID de tu dispositivo (p. ej. 'aquadata-esp32-...') para conectar vía MQTT.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -271,6 +271,20 @@ export default function HomeClient() {
       return { text: 'WiFi: Desconectado', color: 'text-red-600' };
     }
     return null;
+  };
+  
+  const getMqttStatusBadge = () => {
+    switch (mqttStatus) {
+        case 'Conectado':
+            return 'bg-green-600 hover:bg-green-700';
+        case 'Conectando':
+            return 'bg-yellow-500 hover:bg-yellow-600';
+        case 'Error':
+        case 'Desconectado':
+            return 'bg-red-600 hover:bg-red-700';
+        default:
+            return 'bg-blue-600 hover:bg-blue-700';
+    }
   };
 
   const wifiStatus = getWifiStatus();
@@ -368,9 +382,9 @@ export default function HomeClient() {
                   <div><h1 className="text-xl font-bold text-gray-900">AQUADATA 2.0</h1><p className="text-sm text-muted-foreground">Monitor Web</p></div>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Badge variant={'default'} className={`flex items-center space-x-2 ${mode === 'ble' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                  <Badge variant={'default'} className={`flex items-center space-x-2 ${mode === 'ble' ? 'bg-green-600 hover:bg-green-700' : getMqttStatusBadge()}`}>
                     {mode === 'ble' ? <BluetoothConnected className="w-4 h-4" /> : <Cloud className="w-4 h-4" />}
-                    <span>{mode === 'ble' ? 'Conectado (BLE)' : `Conectado (MQTT: ${mqttStatus})`}</span>
+                    <span>{mode === 'ble' ? 'Conectado (BLE)' : `MQTT: ${mqttStatus}`}</span>
                   </Badge>
                   
                   {isMobile ? (
