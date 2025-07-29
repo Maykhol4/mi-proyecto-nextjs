@@ -164,12 +164,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       const messageFragment = payload?.toString();
       if (!messageFragment) return;
       
-      // The ESP32 code doesn't send a newline delimiter, so we process the message directly.
-      // If messages were fragmented, we would need a delimiter. For now, we assume each message is a complete JSON.
-      const parsedData = safeJsonParse(messageFragment);
-      if (parsedData) {
-        setSensorData(parsedData);
-      }
+      processFragmentedMessage(receivedTopic, messageFragment);
     });
 
     client.on('error', (error) => {
