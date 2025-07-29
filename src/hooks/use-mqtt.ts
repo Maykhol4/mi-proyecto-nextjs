@@ -8,7 +8,7 @@ import { type SensorData } from '@/app/ble-connector';
 type MqttStatus = 'Conectando' | 'Conectado' | 'Desconectado' | 'Error';
 
 const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
-const MESSAGE_DELIMITER = '\n'; // Delimitador para mensajes completos
+const MESSAGE_DELIMITER = '\n'; // Delimiter for complete messages
 
 export function useMqtt(deviceId: string | null, enabled: boolean) {
   const { toast } = useToast();
@@ -18,7 +18,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
   const isConnectingRef = useRef<boolean>(false);
   const isMountedRef = useRef<boolean>(true);
   
-  // Buffer para acumular mensajes fragmentados por tópico
+  // Buffer to accumulate fragmented messages per topic
   const messageBufferRef = useRef<Map<string, string>>(new Map());
   
   const safeSetConnectionStatus = useCallback((status: MqttStatus) => {
@@ -32,12 +32,12 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       const client = clientRef.current;
       clientRef.current = null;
       isConnectingRef.current = false;
-      // Limpiar buffers
+      // Clear buffers
       messageBufferRef.current.clear();
       
       client.removeAllListeners();
       if (client.connected) {
-        client.end(true, () => console.log('Cliente MQTT desconectado.'));
+        client.end(true, () => console.log('MQTT client disconnected.'));
       }
     }
   }, []);
@@ -48,76 +48,62 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       
       const trimmed = messageStr.trim();
       
-      // Validar que empiece con { y termine con }
       if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
-        console.warn('Mensaje no parece ser JSON válido:', trimmed);
+        console.warn('Message does not appear to be valid JSON:', trimmed);
         return null;
       }
       
       const parsed = JSON.parse(trimmed) as SensorData;
       
-      // Validación básica de estructura de SensorData
       if (typeof parsed !== 'object' || parsed === null) {
-        console.warn('Datos parseados no son un objeto:', parsed);
+        console.warn('Parsed data is not an object:', parsed);
         return null;
       }
       
       return parsed;
     } catch (error) {
-      console.error('Error parseando JSON:', error, 'Mensaje:', messageStr);
+      console.error('Error parsing JSON:', error, 'Message:', messageStr);
       return null;
     }
   }, []);
 
-  // Función para procesar mensajes fragmentados
   const processFragmentedMessage = useCallback((topic: string, newFragment: string) => {
     if (!isMountedRef.current) return;
     
-    // Obtener el buffer actual para este tópico
     const currentBuffer = messageBufferRef.current.get(topic) || '';
-    
-    // Agregar el nuevo fragmento al buffer
     const updatedBuffer = currentBuffer + newFragment;
     
-    // Buscar mensajes completos (terminados en delimitador)
     const messages = updatedBuffer.split(MESSAGE_DELIMITER);
-    
-    // El último elemento podría ser un fragmento incompleto
     const incompleteFragment = messages.pop() || '';
     
-    // Procesar todos los mensajes completos
     messages.forEach(completeMessage => {
       if (completeMessage.trim()) {
         const parsedData = safeJsonParse(completeMessage);
         if (parsedData && isMountedRef.current) {
-          console.log('Mensaje MQTT procesado exitosamente:', parsedData);
+          console.log('MQTT message successfully processed:', parsedData);
           setSensorData(parsedData);
         }
       }
     });
     
-    // Guardar el fragmento incompleto para el próximo mensaje
     if (incompleteFragment) {
       messageBufferRef.current.set(topic, incompleteFragment);
     } else {
-      // Si no hay fragmento incompleto, limpiar el buffer para este tópico
       messageBufferRef.current.delete(topic);
     }
     
-    // Limitar el tamaño del buffer para evitar acumulación excesiva
-    const MAX_BUFFER_SIZE = 10000; // 10KB por tópico
+    const MAX_BUFFER_SIZE = 10000; // 10KB per topic
     const buffer = messageBufferRef.current.get(topic);
     if (buffer && buffer.length > MAX_BUFFER_SIZE) {
-      console.warn(`Buffer demasiado grande para tópico ${topic}, limpiando...`);
+      console.warn(`Buffer too large for topic ${topic}, clearing...`);
       messageBufferRef.current.delete(topic);
     }
   }, [safeJsonParse]);
 
-  // Función para limpiar buffers antiguos (prevenir memory leaks)
   const cleanupOldBuffers = useCallback(() => {
     const MAX_TOPICS = 50;
     if (messageBufferRef.current.size > MAX_TOPICS) {
-      console.warn('Demasiados tópicos en buffer, limpiando...');
+      console.warn('Too many topics in buffer, clearing...');
       messageBufferRef.current.clear();
     }
   }, []);
@@ -136,7 +122,9 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     isConnectingRef.current = true;
     safeSetConnectionStatus('Conectando');
     
-    const topic = `aquadata/${deviceId}/data`;
+    // Subscribe to the real-time data stream topic
+    const topic = `aquadata/${deviceId}/data/stream`;
+    
     const client = mqtt.connect(MQTT_BROKER_URL, {
       connectTimeout: 30000,
       reconnectPeriod: 5000,
@@ -148,23 +136,23 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     client.on('connect', () => {
       if (!isMountedRef.current) return;
       
-      console.log('Conectado al broker MQTT');
+      console.log('Connected to MQTT broker');
       isConnectingRef.current = false;
       safeSetConnectionStatus('Conectado');
       
       client.subscribe(topic, { qos: 1 }, (err) => {
         if (err) {
-          console.error('Error suscribiéndose al tópico:', err);
+          console.error('Error subscribing to topic:', err);
           toast({
-            title: "Error de Suscripción",
-            description: `No se pudo suscribir al tópico: ${topic}`,
+            title: "Subscription Error",
+            description: `Could not subscribe to topic: ${topic}`,
             variant: "destructive",
           });
         } else {
-          console.log(`Suscrito exitosamente al tópico: ${topic}`);
+          console.log(`Successfully subscribed to topic: ${topic}`);
           toast({
-            title: "MQTT Conectado",
-            description: `Escuchando datos del dispositivo ${deviceId}`,
+            title: "MQTT Connected",
+            description: `Listening for data from device ${deviceId}`,
           });
         }
       });
@@ -176,17 +164,21 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       const messageFragment = payload?.toString();
       if (!messageFragment) return;
       
-      // Procesar el fragmento usando el sistema de buffer
-      processFragmentedMessage(receivedTopic, messageFragment);
+      // The ESP32 code doesn't send a newline delimiter, so we process the message directly.
+      // If messages were fragmented, we would need a delimiter. For now, we assume each message is a complete JSON.
+      const parsedData = safeJsonParse(messageFragment);
+      if (parsedData) {
+        setSensorData(parsedData);
+      }
     });
 
     client.on('error', (error) => {
-      console.error('Error de cliente MQTT:', error);
+      console.error('MQTT Client Error:', error);
       if (isMountedRef.current) {
         safeSetConnectionStatus('Error');
         toast({
-          title: "Error de Conexión MQTT",
-          description: "No se pudo conectar al broker MQTT",
+          title: "MQTT Connection Error",
+          description: "Could not connect to the MQTT broker",
           variant: "destructive",
         });
       }
@@ -198,15 +190,14 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       }
     });
 
-    // Limpiar buffers antiguos periódicamente
-    const cleanupInterval = setInterval(cleanupOldBuffers, 300000); // cada 5 minutos
+    const cleanupInterval = setInterval(cleanupOldBuffers, 300000);
 
     return () => {
       isMountedRef.current = false;
       clearInterval(cleanupInterval);
       cleanupConnection();
     };
-  }, [deviceId, enabled, toast, cleanupConnection, safeSetConnectionStatus, processFragmentedMessage, cleanupOldBuffers]);
+  }, [deviceId, enabled, toast, cleanupConnection, safeSetConnectionStatus, processFragmentedMessage, cleanupOldBuffers, safeJsonParse]);
 
   useEffect(() => {
     return () => { 
