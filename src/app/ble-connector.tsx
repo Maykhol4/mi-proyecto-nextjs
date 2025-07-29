@@ -89,6 +89,7 @@ export interface BleConnectorRef {
     handleDisconnect: () => Promise<void>;
     sendWifiConfig: (ssid: string, psk: string) => Promise<void>;
     sendControlCommand: (command: 'wifi_disconnect' | 'restart') => Promise<void>;
+    sendModeCommand: (mode: 'hybrid' | 'ble_only') => Promise<void>;
 }
 
 interface BleConnectorProps {
@@ -254,7 +255,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
               const jsonData = JSON.parse(message);
               console.log('📦 Mensaje recibido:', jsonData);
               
-              if (jsonData.type && ['wifi_config_response', 'wifi_disconnect_response'].includes(jsonData.type)) {
+              if (jsonData.type && ['wifi_config_response', 'wifi_disconnect_response', 'mode_change_response'].includes(jsonData.type)) {
                   toast({
                       title: 'Respuesta del Dispositivo',
                       description: jsonData.message || 'Comando procesado.',
@@ -544,10 +545,15 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     toast({ title: 'Comando Enviado', description: `Comando '${commandType}' enviado al dispositivo.` });
   }
 
+  const sendModeCommand = async (mode: 'hybrid' | 'ble_only') => {
+    await sendCommand({ type: 'set_mode', mode: mode });
+  }
+
   React.useImperativeHandle(ref, () => ({
       handleDisconnect,
       sendWifiConfig,
       sendControlCommand,
+      sendModeCommand
   }));
 
   const handleScanModalClose = async () => {
