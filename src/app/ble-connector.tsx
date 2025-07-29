@@ -50,9 +50,9 @@ interface BleClient {
 
 export interface SensorData {
   ph: number | null;
-  do_conc: number | null;
-  do_sat: number | null;
-  temp: number | null;
+  dissolved_oxygen: number | null;
+  dissolved_oxygen_saturation: number | null;
+  temperature: number | null;
   timestamp: string;
   status: '🟢' | '🟡' | '🔴' | string;
   readings_count?: { ph: number; do: number };
@@ -65,9 +65,9 @@ export interface SensorData {
 
 export const initialSensorData: SensorData = {
   ph: null,
-  do_conc: null,
-  do_sat: null,
-  temp: null,
+  dissolved_oxygen: null,
+  dissolved_oxygen_saturation: null,
+  temperature: null,
   timestamp: '--:--:--',
   status: '⚪',
   readings_count: { ph: 0, do: 0 },
