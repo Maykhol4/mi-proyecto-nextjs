@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import mqtt, { MqttClient } from 'mqtt';
@@ -64,16 +64,15 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       if (receivedTopic === topic) {
         try {
           const messageStr = payload.toString();
-          // Añadida la verificación para evitar el error con payloads vacíos.
-          if (messageStr) {
+          if (messageStr.trim()) {
             const jsonData = JSON.parse(messageStr);
             console.log('Mensaje MQTT recibido:', jsonData);
             setSensorData(jsonData as SensorData);
           } else {
-            console.warn('Mensaje MQTT vacío recibido y omitido.');
+            console.warn('Mensaje MQTT vacío o con solo espacios recibido y omitido.');
           }
         } catch (error) {
-          console.error('Error parseando mensaje MQTT:', error);
+          console.error('Error parseando mensaje MQTT, mensaje omitido:', error);
         }
       }
     });
