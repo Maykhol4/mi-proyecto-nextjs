@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import mqtt, { MqttClient, ISubscriptionGrant } from 'mqtt';
+import { useState, useEffect, useRef } from 'react';
+import mqtt, { MqttClient } from 'mqtt';
 import { useToast } from './use-toast';
 import { type SensorData } from '@/app/ble-connector';
 
@@ -28,6 +28,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
   useEffect(() => {
     if (!enabled || !deviceId) {
       if (clientRef.current) {
+        console.log('MQTT: Desconectando por deshabilitación o falta de ID.');
         clientRef.current.end(true);
         clientRef.current = null;
         setConnectionStatus('Desconectado');
@@ -63,7 +64,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
             description: `El broker rechazó la suscripción al topic: ${topic}`,
             variant: "destructive",
           });
-          client.end();
+          client.end(); // Cerramos la conexión si la suscripción falla.
         } else {
           console.log(`Suscrito exitosamente a: ${topic}`);
           toast({
@@ -99,8 +100,11 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     });
 
     client.on('close', () => {
-      if (connectionStatus !== 'Desconectado') {
+      // Solo actualizamos el estado si no fue una desconexión intencionada
+      if (clientRef.current) {
+        isConnectingRef.current = false;
         setConnectionStatus('Desconectado');
+        clientRef.current = null;
         toast({
           title: 'MQTT: Desconectado',
           description: 'Se ha perdido la conexión con el broker.',
@@ -111,12 +115,13 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
 
     return () => {
       if (clientRef.current) {
+        console.log('MQTT: Desconectando (limpieza de efecto).');
         clientRef.current.end(true);
         clientRef.current = null;
+        isConnectingRef.current = false;
       }
-      isConnectingRef.current = false;
     };
-  }, [deviceId, enabled, toast, connectionStatus]);
+  }, [deviceId, enabled, toast]);
 
   return { connectionStatus, sensorData };
 }
