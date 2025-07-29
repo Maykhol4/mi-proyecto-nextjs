@@ -239,9 +239,9 @@ export default function HomeClient() {
   };
 
   const phStatus = getSensorStatus(sensorData.ph, 6.0, 9.0, 6.5, 8.5);
-  const doStatus = getSensorStatus(sensorData.dissolved_oxygen, 4.0, undefined, 6.0, undefined);
-  const tempStatus = getSensorStatus(sensorData.temperature, 15, 30, 18, 28);
-  const satStatus = getSensorStatus(sensorData.oxygen_saturation, 80, 120, 90, 110);
+  const doStatus = getSensorStatus(sensorData.do_conc, 4.0, undefined, 6.0, undefined);
+  const tempStatus = getSensorStatus(sensorData.temp, 15, 30, 18, 28);
+  const satStatus = getSensorStatus(sensorData.do_sat, 80, 120, 90, 110);
   
   const getStatusColor = (status?: string) => {
     if (typeof status !== 'string') return 'border-l-gray-400';
@@ -455,9 +455,9 @@ export default function HomeClient() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <SensorCard icon={<TestTube className="w-5 h-5 text-blue-600" />} title="pH del Agua" value={sensorData.ph} unit="" description="Unidades de pH (6.5-8.5 óptimo)" status={phStatus} />
-                <SensorCard icon={<Droplets className="w-5 h-5 text-cyan-600" />} title="Oxígeno Disuelto" value={sensorData.dissolved_oxygen} unit="mg/L" description=">6.0 óptimo" status={doStatus} />
-                <SensorCard icon={<TrendingUp className="w-5 h-5 text-purple-600" />} title="Saturación O₂" value={sensorData.oxygen_saturation} unit="%" description="80-120% óptimo" status={satStatus} />
-                <SensorCard icon={<Thermometer className="w-5 h-5 text-orange-600" />} title="Temperatura" value={sensorData.temperature} unit="°C" description="18-28°C óptimo" status={tempStatus} />
+                <SensorCard icon={<Droplets className="w-5 h-5 text-cyan-600" />} title="Oxígeno Disuelto" value={sensorData.do_conc} unit="mg/L" description=">6.0 óptimo" status={doStatus} />
+                <SensorCard icon={<TrendingUp className="w-5 h-5 text-purple-600" />} title="Saturación O₂" value={sensorData.do_sat} unit="%" description="80-120% óptimo" status={satStatus} />
+                <SensorCard icon={<Thermometer className="w-5 h-5 text-orange-600" />} title="Temperatura" value={sensorData.temp} unit="°C" description="18-28°C óptimo" status={tempStatus} />
             </div>
 
             <Card>

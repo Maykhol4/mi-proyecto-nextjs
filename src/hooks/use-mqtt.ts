@@ -25,9 +25,9 @@ export function useMqtt(enabled: boolean) {
         // Aseguramos que los campos coincidan con la interfaz SensorData
         return {
           ph: data.ph,
-          dissolved_oxygen: data.dissolved_oxygen,
-          oxygen_saturation: data.oxygen_saturation,
-          temperature: data.temperature,
+          do_conc: data.do_conc,
+          do_sat: data.do_sat,
+          temp: data.temp,
           timestamp: data.timestamp,
           status: data.status,
           readings_count: data.readings_count,
