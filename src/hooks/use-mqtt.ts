@@ -7,9 +7,8 @@ import { type SensorData } from '@/app/ble-connector';
 
 type MqttStatus = 'Conectando' | 'Conectado' | 'Desconectado' | 'Error';
 
-// APUNTAMOS AL BROKER LOCAL SOBRE WEBSOCKET
-const MQTT_BROKER_URL = `ws://localhost:8888`; 
-const MESSAGE_DELIMITER = '\n'; 
+const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
+const MESSAGE_DELIMITER = '\n'; // Delimitador para mensajes completos
 
 export function useMqtt(deviceId: string | null, enabled: boolean) {
   const { toast } = useToast();
@@ -19,6 +18,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
   const isConnectingRef = useRef<boolean>(false);
   const isMountedRef = useRef<boolean>(true);
   
+  // Buffer para acumular mensajes fragmentados por tópico
   const messageBufferRef = useRef<Map<string, string>>(new Map());
   
   const safeSetConnectionStatus = useCallback((status: MqttStatus) => {
@@ -32,6 +32,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       const client = clientRef.current;
       clientRef.current = null;
       isConnectingRef.current = false;
+      // Limpiar buffers
       messageBufferRef.current.clear();
       
       client.removeAllListeners();
@@ -47,6 +48,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       
       const trimmed = messageStr.trim();
       
+      // Validar que empiece con { y termine con }
       if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
         console.warn('Mensaje no parece ser JSON válido:', trimmed);
         return null;
@@ -54,6 +56,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       
       const parsed = JSON.parse(trimmed) as SensorData;
       
+      // Validación básica de estructura de SensorData
       if (typeof parsed !== 'object' || parsed === null) {
         console.warn('Datos parseados no son un objeto:', parsed);
         return null;
@@ -66,14 +69,23 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     }
   }, []);
 
+  // Función para procesar mensajes fragmentados
   const processFragmentedMessage = useCallback((topic: string, newFragment: string) => {
     if (!isMountedRef.current) return;
     
+    // Obtener el buffer actual para este tópico
     const currentBuffer = messageBufferRef.current.get(topic) || '';
+    
+    // Agregar el nuevo fragmento al buffer
     const updatedBuffer = currentBuffer + newFragment;
+    
+    // Buscar mensajes completos (terminados en delimitador)
     const messages = updatedBuffer.split(MESSAGE_DELIMITER);
+    
+    // El último elemento podría ser un fragmento incompleto
     const incompleteFragment = messages.pop() || '';
     
+    // Procesar todos los mensajes completos
     messages.forEach(completeMessage => {
       if (completeMessage.trim()) {
         const parsedData = safeJsonParse(completeMessage);
@@ -84,13 +96,16 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       }
     });
     
+    // Guardar el fragmento incompleto para el próximo mensaje
     if (incompleteFragment) {
       messageBufferRef.current.set(topic, incompleteFragment);
     } else {
+      // Si no hay fragmento incompleto, limpiar el buffer para este tópico
       messageBufferRef.current.delete(topic);
     }
     
-    const MAX_BUFFER_SIZE = 10000;
+    // Limitar el tamaño del buffer para evitar acumulación excesiva
+    const MAX_BUFFER_SIZE = 10000; // 10KB por tópico
     const buffer = messageBufferRef.current.get(topic);
     if (buffer && buffer.length > MAX_BUFFER_SIZE) {
       console.warn(`Buffer demasiado grande para tópico ${topic}, limpiando...`);
@@ -98,6 +113,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     }
   }, [safeJsonParse]);
 
+  // Función para limpiar buffers antiguos (prevenir memory leaks)
   const cleanupOldBuffers = useCallback(() => {
     const MAX_TOPICS = 50;
     if (messageBufferRef.current.size > MAX_TOPICS) {
@@ -122,8 +138,8 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     
     const topic = `aquadata/${deviceId}/data`;
     const client = mqtt.connect(MQTT_BROKER_URL, {
-      connectTimeout: 10000, // Timeout más corto para broker local
-      reconnectPeriod: 2000,
+      connectTimeout: 30000,
+      reconnectPeriod: 5000,
       keepalive: 60,
       clean: true
     });
@@ -132,7 +148,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
     client.on('connect', () => {
       if (!isMountedRef.current) return;
       
-      console.log('Conectado al broker MQTT local');
+      console.log('Conectado al broker MQTT');
       isConnectingRef.current = false;
       safeSetConnectionStatus('Conectado');
       
@@ -147,7 +163,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
         } else {
           console.log(`Suscrito exitosamente al tópico: ${topic}`);
           toast({
-            title: "MQTT Local Conectado",
+            title: "MQTT Conectado",
             description: `Escuchando datos del dispositivo ${deviceId}`,
           });
         }
@@ -160,6 +176,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       const messageFragment = payload?.toString();
       if (!messageFragment) return;
       
+      // Procesar el fragmento usando el sistema de buffer
       processFragmentedMessage(receivedTopic, messageFragment);
     });
 
@@ -169,7 +186,7 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
         safeSetConnectionStatus('Error');
         toast({
           title: "Error de Conexión MQTT",
-          description: "No se pudo conectar al broker local.",
+          description: "No se pudo conectar al broker MQTT",
           variant: "destructive",
         });
       }
@@ -181,7 +198,8 @@ export function useMqtt(deviceId: string | null, enabled: boolean) {
       }
     });
 
-    const cleanupInterval = setInterval(cleanupOldBuffers, 300000);
+    // Limpiar buffers antiguos periódicamente
+    const cleanupInterval = setInterval(cleanupOldBuffers, 300000); // cada 5 minutos
 
     return () => {
       isMountedRef.current = false;
