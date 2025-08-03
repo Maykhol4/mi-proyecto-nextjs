@@ -255,16 +255,14 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       if (lastNewline !== -1) {
         const completeMessages = receivedDataBuffer.current.substring(0, lastNewline);
         receivedDataBuffer.current = receivedDataBuffer.current.substring(lastNewline + 1);
-
+  
         completeMessages.split('\n').forEach(message => {
           if (message.trim()) {
             try {
               const jsonData = JSON.parse(message);
               console.log('📦 Mensaje recibido:', jsonData);
               
-              // Lógica Corregida: Procesar todos los tipos de mensajes
-              
-              // 1. Comprobar si es una respuesta a un comando y mostrar un toast
+              // 1. Verificar si es una respuesta a comando y mostrar toast
               if (jsonData.type && ['wifi_config_response', 'wifi_disconnect_response', 'restart_response', 'set_mode_response'].includes(jsonData.type)) {
                   toast({
                       title: 'Respuesta del Dispositivo',
@@ -273,12 +271,17 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
                   });
               }
               
-              // 2. Comprobar si es un paquete de datos de sensor y actualizar la UI
-              // Un paquete de datos de sensor tiene campos como 'ph', 'do_conc', 'temp' o 'timestamp'.
-              if (typeof jsonData.ph !== 'undefined' || typeof jsonData.do_conc !== 'undefined' || typeof jsonData.timestamp !== 'undefined') {
+              // 2. Verificar INDEPENDIENTEMENTE si contiene datos de sensores
+              const hasSensorData = typeof jsonData.ph !== 'undefined' || 
+                                   typeof jsonData.do_conc !== 'undefined' ||
+                                   typeof jsonData.temp !== 'undefined' ||
+                                   typeof jsonData.timestamp !== 'undefined';
+              
+              if (hasSensorData) {
+                  console.log('🔬 Procesando datos de sensores:', jsonData);
                   handleData(jsonData as SensorData);
               }
-
+  
             } catch (parseError) {
               console.warn('Error parseando JSON:', parseError, 'Mensaje:', `"${message}"`);
             }
@@ -809,5 +812,3 @@ function createWebBluetoothAdapter(): BleClient {
     }
   };
 }
-
-    
