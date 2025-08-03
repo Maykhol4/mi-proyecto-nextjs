@@ -222,23 +222,36 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
 
   const onDisconnected = useCallback(() => {
     if (!isMountedRef.current) return;
+    
+    // Clear connection monitoring interval
     if (connectionMonitorIntervalRef.current) {
       clearInterval(connectionMonitorIntervalRef.current);
       connectionMonitorIntervalRef.current = null;
     }
-    connectedDeviceRef.current = null;
-    setIsConnected(false);
-    setIsConnecting(false);
-    setInitialSensorData();
+    
+    // Clear connection timeout
     if (connectionTimeoutRef.current) {
       clearTimeout(connectionTimeoutRef.current);
       connectionTimeoutRef.current = null;
     }
+
+    // Reset state variables
+    connectedDeviceRef.current = null;
+    setIsConnected(false);
+    setIsConnecting(false);
+    
+    // Clear data buffer
+    receivedDataBuffer.current = '';
+    
+    // Reset sensor data on UI
+    setInitialSensorData();
+    
     toast({
       title: 'Desconectado',
       description: 'El dispositivo Bluetooth se ha desconectado.',
     });
   }, [toast, setIsConnected, setInitialSensorData]);
+
 
   const handleData = useCallback((data: SensorData) => {
     if (isMountedRef.current) {
