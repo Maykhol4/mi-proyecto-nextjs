@@ -90,7 +90,7 @@ const NATIVE_CONNECTION_MONITOR_INTERVAL_MS = 3000;
 export interface BleConnectorRef {
     handleDisconnect: () => Promise<void>;
     sendWifiConfig: (ssid: string, psk: string) => Promise<void>;
-    sendControlCommand: (command: 'wifi_disconnect' | 'restart') => Promise<void>;
+    sendControlCommand: (command: 'wifi_disconnect' | 'restart' | 'set_mode', mode?: 'hybrid' | 'ble_only' | 'mqtt_only') => Promise<void>;
 }
 
 interface BleConnectorProps {
@@ -262,10 +262,10 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
               const jsonData = JSON.parse(message);
               console.log('📦 Mensaje recibido:', jsonData);
               
-              // Lógica Mejorada: Procesar todos los mensajes
+              // Lógica Corregida: Procesar todos los tipos de mensajes
               
               // 1. Comprobar si es una respuesta a un comando y mostrar un toast
-              if (jsonData.type && ['wifi_config_response', 'wifi_disconnect_response', 'restart_response'].includes(jsonData.type)) {
+              if (jsonData.type && ['wifi_config_response', 'wifi_disconnect_response', 'restart_response', 'set_mode_response'].includes(jsonData.type)) {
                   toast({
                       title: 'Respuesta del Dispositivo',
                       description: jsonData.message || 'Comando procesado.',
@@ -274,8 +274,8 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
               }
               
               // 2. Comprobar si es un paquete de datos de sensor y actualizar la UI
-              // Un paquete de datos de sensor tiene la propiedad 'ph' o 'timestamp'.
-              if (typeof jsonData.ph !== 'undefined' || typeof jsonData.timestamp !== 'undefined') {
+              // Un paquete de datos de sensor tiene campos como 'ph', 'do_conc', 'temp' o 'timestamp'.
+              if (typeof jsonData.ph !== 'undefined' || typeof jsonData.do_conc !== 'undefined' || typeof jsonData.timestamp !== 'undefined') {
                   handleData(jsonData as SensorData);
               }
 
@@ -289,6 +289,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       console.error('Error procesando notificación BLE:', error);
     }
   }, [handleData, toast]);
+
 
   const stopScanning = useCallback(async () => {
     if (!isScanning || !bleClientRef.current?.stopLEScan) return;
@@ -582,10 +583,15 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     toast({ title: 'Comando Enviado', description: 'Configuración WiFi enviada al dispositivo.' });
   };
   
-  const sendControlCommand = async (commandType: 'wifi_disconnect' | 'restart') => {
-    await sendCommand({ type: commandType });
+  const sendControlCommand = async (commandType: 'wifi_disconnect' | 'restart' | 'set_mode', mode?: 'hybrid' | 'ble_only' | 'mqtt_only') => {
+    let command: object = { type: commandType };
+    if (commandType === 'set_mode' && mode) {
+        command = { ...command, mode: mode };
+    }
+    await sendCommand(command);
     toast({ title: 'Comando Enviado', description: `Comando '${commandType}' enviado al dispositivo.` });
   }
+
 
   React.useImperativeHandle(ref, () => ({
       handleDisconnect,
@@ -803,3 +809,5 @@ function createWebBluetoothAdapter(): BleClient {
     }
   };
 }
+
+    

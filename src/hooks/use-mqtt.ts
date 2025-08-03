@@ -10,6 +10,9 @@ type MqttStatus = 'Conectando' | 'Conectado' | 'Desconectado' | 'Error';
 
 const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const MQTT_TOPIC = 'aquadata/sensor-data';
+// Definir un Client ID único para la aplicación web
+const MQTT_CLIENT_ID = `aquadata-webapp-${Math.random().toString(16).substr(2, 8)}`;
+
 
 export function useMqtt(enabled: boolean) {
   const { toast } = useToast();
@@ -22,7 +25,7 @@ export function useMqtt(enabled: boolean) {
     try {
       const data = JSON.parse(messageStr);
       // Validar que el objeto parseado contenga al menos un campo esperado
-      if (data && typeof data.ph !== 'undefined') {
+      if (data && (typeof data.ph !== 'undefined' || typeof data.do_conc !== 'undefined')) {
         // Aseguramos que los campos coincidan con la interfaz SensorData
         return {
           ph: data.ph,
@@ -61,6 +64,7 @@ export function useMqtt(enabled: boolean) {
     toast({ title: 'MQTT: Conectando...', description: `A ${MQTT_BROKER_URL}` });
     
     const client = mqtt.connect(MQTT_BROKER_URL, {
+      clientId: MQTT_CLIENT_ID,
       connectTimeout: 10000,
       reconnectPeriod: 5000,
     });
@@ -137,3 +141,5 @@ export function useMqtt(enabled: boolean) {
 
   return { connectionStatus, sensorData };
 }
+
+    

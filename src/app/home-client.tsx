@@ -28,6 +28,9 @@ import {
   Power,
   WifiOff,
   Cloud,
+  Layers,
+  Mqtt,
+  Radio,
 } from 'lucide-react';
 import type { SensorData, BleConnectorRef } from './ble-connector';
 import { initialSensorData } from './ble-connector';
@@ -217,7 +220,7 @@ const WifiConfigModal: FC<{
 // --- Main UI Component ---
 export default function HomeClient() {
   const [bleSensorData, setBleSensorData] = useState<SensorData>(initialSensorData);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isBleConnected, setIsBleConnected] = useState(false);
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
   const [isMqttModalOpen, setIsMqttModalOpen] = useState(false);
   const [mode, setMode] = useState<'ble' | 'mqtt' | 'disconnected'>('disconnected');
@@ -279,27 +282,29 @@ export default function HomeClient() {
   const wifiStatus = getWifiStatus();
 
   const handleDisconnect = () => {
-    if (mode === 'ble') {
-      bleConnectorRef.current?.handleDisconnect();
+    if (mode === 'ble' && bleConnectorRef.current) {
+      bleConnectorRef.current.handleDisconnect();
     }
+    // Si estamos en modo MQTT, el hook useMqtt se encargará de la desconexión
     setMode('disconnected');
     setBleSensorData(initialSensorData);
-    setIsConnected(false);
+    setIsBleConnected(false);
   };
   
   const handleSaveWifi = (ssid: string, psk: string) => {
       bleConnectorRef.current?.sendWifiConfig(ssid, psk);
   }
 
-  const handleControlCommand = (command: 'wifi_disconnect' | 'restart') => {
+  const handleControlCommand = (command: 'wifi_disconnect' | 'restart' | 'set_mode', mode?: 'hybrid' | 'ble_only' | 'mqtt_only') => {
     if (command === 'restart') {
       toast({
         title: 'Reiniciando Dispositivo',
         description: 'El dispositivo se reiniciará. Deberás reconectarte.'
       });
     }
-    bleConnectorRef.current?.sendControlCommand(command);
+    bleConnectorRef.current?.sendControlCommand(command, mode);
   }
+
 
   const handleMqttConnect = () => {
     setMode('mqtt');
@@ -307,7 +312,7 @@ export default function HomeClient() {
   };
 
   const handleBleConnect = (connected: boolean) => {
-    setIsConnected(connected);
+    setIsBleConnected(connected);
     if(connected) {
       setMode('ble');
     }
@@ -371,8 +376,8 @@ export default function HomeClient() {
                 </div>
                 <div className="flex items-center space-x-2">
                   <Badge variant={'default'} className={`flex items-center space-x-2 ${mode === 'ble' ? 'bg-blue-600 hover:bg-blue-700' : getMqttStatusBadge()}`}>
-                    {mode === 'ble' ? (isConnected ? <BluetoothConnected className="w-4 h-4" /> : <Bluetooth className="w-4 h-4" />) : <Cloud className="w-4 h-4" />}
-                    <span>{mode === 'ble' ? (isConnected ? 'Conectado (BLE)' : 'Desconectado') : `MQTT: ${mqttStatus}`}</span>
+                    {mode === 'ble' ? (isBleConnected ? <BluetoothConnected className="w-4 h-4" /> : <Bluetooth className="w-4 h-4" />) : <Cloud className="w-4 h-4" />}
+                    <span>{mode === 'ble' ? (isBleConnected ? 'Conectado (BLE)' : 'Desconectado') : `MQTT: ${mqttStatus}`}</span>
                   </Badge>
                   
                   {isMobile ? (
@@ -383,15 +388,15 @@ export default function HomeClient() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        <DropdownMenuItem onSelect={() => setIsWifiModalOpen(true)} disabled={mode !== 'ble' || !isConnected}>
+                        <DropdownMenuItem onSelect={() => setIsWifiModalOpen(true)} disabled={mode !== 'ble' || !isBleConnected}>
                           <Settings className="mr-2 h-4 w-4" />
                           <span>Ajustes WiFi</span>
                         </DropdownMenuItem>
-                         <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')} disabled={mode !== 'ble' || !isConnected}>
+                         <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')} disabled={mode !== 'ble' || !isBleConnected}>
                           <WifiOff className="mr-2 h-4 w-4" />
                           <span>Desconectar WiFi</span>
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => handleControlCommand('restart')} disabled={mode !== 'ble' || !isConnected}>
+                        <DropdownMenuItem onSelect={() => handleControlCommand('restart')} disabled={mode !== 'ble' || !isBleConnected}>
                           <Power className="mr-2 h-4 w-4" />
                           <span>Reiniciar Dispositivo</span>
                         </DropdownMenuItem>
@@ -404,13 +409,13 @@ export default function HomeClient() {
                     </DropdownMenu>
                   ) : (
                     <>
-                      <Button onClick={() => setIsWifiModalOpen(true)} variant="outline" size="sm" disabled={mode !== 'ble' || !isConnected}>
+                      <Button onClick={() => setIsWifiModalOpen(true)} variant="outline" size="sm" disabled={mode !== 'ble' || !isBleConnected}>
                           <Settings className="mr-2 h-4 w-4" />
                           Ajustes
                       </Button>
                        <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" disabled={mode !== 'ble' || !isConnected}>
+                          <Button variant="outline" size="sm" disabled={mode !== 'ble' || !isBleConnected}>
                             Comandos
                             <ChevronDown className="ml-2 h-4 w-4" />
                           </Button>
@@ -423,6 +428,19 @@ export default function HomeClient() {
                           <DropdownMenuItem onSelect={() => handleControlCommand('restart')}>
                             <Power className="mr-2 h-4 w-4" />
                             <span>Reiniciar Dispositivo</span>
+                          </DropdownMenuItem>
+                           <DropdownMenuSeparator />
+                           <DropdownMenuItem onSelect={() => handleControlCommand('set_mode', 'hybrid')}>
+                              <Layers className="mr-2 h-4 w-4" />
+                              <span>Modo Híbrido (BLE+MQTT)</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => handleControlCommand('set_mode', 'ble_only')}>
+                              <Radio className="mr-2 h-4 w-4" />
+                              <span>Modo solo BLE</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => handleControlCommand('set_mode', 'mqtt_only')}>
+                              <Cloud className="mr-2 h-4 w-4" />
+                              <span>Modo solo MQTT</span>
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -478,3 +496,5 @@ export default function HomeClient() {
     </>
   );
 }
+
+    
