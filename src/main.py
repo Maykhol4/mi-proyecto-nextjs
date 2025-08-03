@@ -1,4 +1,4 @@
-# main.py - ESP32 con MicroPython - Versión Robusta
+# main.py - ESP32 con MicroPython - Versión Híbrida y Robusta
 import network
 import uasyncio
 from umqtt.simple import MQTTClient
@@ -6,7 +6,7 @@ import ujson
 import utime
 import machine
 import ubinascii
-import urandom
+import random
 
 # --- CONFIGURACIÓN ---
 WIFI_SSID = "TP-Link_DF16"
@@ -21,6 +21,7 @@ PUBLISH_INTERVAL_S = 5
 # --- ESTADO GLOBAL ---
 wlan = network.WLAN(network.STA_IF)
 mqtt_client = None
+ble_uart = None  # Renombrado para claridad
 
 simulation_cycle = 0
 readings_count = {'ph': 0, 'do': 0}
@@ -29,68 +30,88 @@ errors_count = {'ph': 0, 'do': 0}
 # --- FUNCIONES ---
 
 async def connect_to_wifi():
-    """Se conecta a la red WiFi de forma asíncrona."""
+    """Se conecta a la red WiFi de forma asíncrona y robusta."""
     if wlan.isconnected():
         return True
         
-    print(f"Conectando a WiFi: {WIFI_SSID}...")
+    print(f"📡 Conectando a WiFi: {WIFI_SSID}...")
     wlan.active(True)
-    wlan.connect(WIFI_SSID, WIFI_PASSWORD)
-    
-    max_wait = 20
-    while max_wait > 0:
-        if wlan.isconnected():
-            print(f"WiFi conectado. IP: {wlan.ifconfig()[0]}")
-            return True
-        max_wait -= 1
-        print("Esperando conexión WiFi...")
-        await uasyncio.sleep(1)
-        
-    print("Error: Fallo al conectar a WiFi.")
-    return False
+    if not wlan.isconnected():
+        wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+        max_wait = 20
+        while max_wait > 0:
+            if wlan.isconnected():
+                print(f"✅ WiFi conectado. IP: {wlan.ifconfig()[0]}")
+                return True
+            max_wait -= 1
+            print("⏳ Esperando conexión WiFi...")
+            await uasyncio.sleep(1)
+            
+    if not wlan.isconnected():
+        print("❌ Error: Fallo al conectar a WiFi.")
+        return False
+    return True
 
 def connect_to_mqtt():
     """Se conecta al broker MQTT. Devuelve True si es exitoso, False si no."""
     global mqtt_client
     try:
-        print(f"Conectando a MQTT: {MQTT_BROKER}...")
+        if mqtt_client:
+            try:
+                mqtt_client.disconnect()
+            except:
+                pass
+        
+        print(f"🧠 Conectando a MQTT: {MQTT_BROKER}...")
         mqtt_client = MQTTClient(CLIENT_ID, MQTT_BROKER, port=MQTT_PORT, keepalive=60)
         mqtt_client.connect()
-        print(f"MQTT conectado. Publicando en: {MQTT_TOPIC}")
+        print(f"✅ MQTT conectado. Publicando en: {MQTT_TOPIC}")
         return True
     except Exception as e:
-        print(f"Error conectando a MQTT: {e}")
+        print(f"❌ Error conectando a MQTT: {e}")
+        mqtt_client = None
         return False
 
 def simulate_sensor_data():
     """Genera datos de sensores simulados."""
     global simulation_cycle, readings_count, errors_count
     simulation_cycle += 1
-    readings_count['ph'] += 1
-    readings_count['do'] += 1
     
-    status = "🟢 All systems normal"
-    if urandom.randint(0, 100) > 95:
-        status = "🟡 Minor warning detected"
+    ph_value = round(random.uniform(6.5, 8.0), 2)
+    do_conc = round(random.uniform(5.0, 9.0), 2)
+    do_sat = round(random.uniform(85.0, 110.0), 1)
+    temp = round(random.uniform(20.0, 26.0), 1)
+
+    # Simular errores ocasionales
+    if random.random() < 0.05:
+        ph_value = None
         errors_count['ph'] += 1
-    
-    ph_value = urandom.randint(650, 800) / 100.0
-    do_value = urandom.randint(550, 850) / 100.0
-    do_sat_value = urandom.randint(8500, 10500) / 100.0
-    temp_value = urandom.randint(2100, 2450) / 100.0
-    
-    current_time = utime.localtime()
-    
+    else:
+        readings_count['ph'] += 1
+
+    if random.random() < 0.05:
+        do_conc = None
+        errors_count['do'] += 1
+    else:
+        readings_count['do'] += 1
+
+    status = "🟢 All systems normal"
+    if ph_value is None or do_conc is None:
+        status = "🔴 Sensor error detected"
+    elif ph_value < 6.5 or ph_value > 8.5 or do_conc < 6.0:
+        status = "🟡 Warning levels detected"
+
     return {
-        "ph": round(ph_value, 2),
-        "dissolved_oxygen": round(do_value, 1),
-        "dissolved_oxygen_saturation": round(do_sat_value, 1),
-        "temperature": round(temp_value, 1),
-        "timestamp": f"{current_time[3]:02}:{current_time[4]:02}:{current_time[5]:02}",
+        "ph": ph_value,
+        "do_conc": do_conc,
+        "do_sat": do_sat,
+        "temp": temp,
+        "timestamp": f"{utime.localtime()[3]:02}:{utime.localtime()[4]:02}:{utime.localtime()[5]:02}",
         "status": status,
         "readings_count": readings_count.copy(),
         "errors_count": errors_count.copy(),
-        "simulation_cycle": simulation_cycle
+        "simulation_cycle": simulation_cycle,
+        "wifi_status": "connected" if wlan.isconnected() else "disconnected"
     }
 
 def is_mqtt_connected():
@@ -105,53 +126,69 @@ def is_mqtt_connected():
 
 async def main_loop():
     """Bucle principal para conectar y publicar datos de forma robusta."""
-    print("Iniciando sistema AquaData...")
+    global ble_uart  # Asegurarse de usar la variable global
+    
+    from ble_uart_peripheral import BLEUART
+    ble = bluetooth.BLE()
+    ble_uart = BLEUART(ble, name="AQUADATA-2.0")
+    print("🔵 BLE UART Inicializado. Nombre: AQUADATA-2.0")
+
+    print("🚀 Iniciando sistema AquaData Híbrido...")
     
     while True:
         try:
-            if not wlan.isconnected():
-                print("WiFi desconectado, reintentando...")
-                if not await connect_to_wifi():
-                    await uasyncio.sleep(10)
-                    continue
+            # --- Gestión de Conexiones ---
+            wifi_is_up = wlan.isconnected()
+            if not wifi_is_up:
+                print("WiFi desconectado, reintentando en segundo plano...")
+                await connect_to_wifi()
+                # Actualizar estado después del intento
+                wifi_is_up = wlan.isconnected()
 
-            if not is_mqtt_connected():
+            mqtt_is_up = is_mqtt_connected()
+            if wifi_is_up and not mqtt_is_up:
                 print("MQTT desconectado, reintentando...")
-                if mqtt_client:
-                    try: mqtt_client.disconnect()
-                    except: pass
-                mqtt_client = None
-                
-                if not connect_to_mqtt():
-                    await uasyncio.sleep(10)
-                    continue
-            
+                connect_to_mqtt()
+
+            # --- Recopilación y Envío de Datos ---
             sensor_data = simulate_sensor_data()
             message = ujson.dumps(sensor_data)
-            
-            # SOLUCIÓN: Añadir delimitador de nueva línea para el frontend
             message_with_delimiter = message + '\n'
-            
-            print(f"Publicando (Ciclo {simulation_cycle})")
-            mqtt_client.publish(MQTT_TOPIC, message_with_delimiter, retain=False)
-            
+
+            # 1. Enviar por Bluetooth si hay alguien conectado
+            if ble_uart and ble_uart.is_connected():
+                try:
+                    ble_uart.write(message_with_delimiter)
+                    print(f"📤 BLE (Ciclo {simulation_cycle}): Datos enviados.")
+                except Exception as e:
+                    print(f"❌ Error enviando por BLE: {e}")
+
+            # 2. Enviar por MQTT si está conectado
+            if wlan.isconnected() and is_mqtt_connected():
+                try:
+                    mqtt_client.publish(MQTT_TOPIC, message_with_delimiter, retain=False)
+                    print(f"📤 MQTT (Ciclo {simulation_cycle}): Datos publicados.")
+                except Exception as e:
+                    print(f"❌ Error publicando en MQTT: {e}")
+                    # Forzar reconexión en el siguiente ciclo
+                    mqtt_client.disconnect()
+                    mqtt_client = None
+
         except OSError as e:
-            print(f"Error de red: {e}. Reiniciando conexiones...")
+            print(f"‼️ Error de red: {e}. Reiniciando conexiones...")
             if mqtt_client:
                 try: mqtt_client.disconnect()
                 except: pass
             mqtt_client = None
-            wlan.disconnect()
-            await uasyncio.sleep(2)
+            if wlan.isconnected():
+                wlan.disconnect()
+            await uasyncio.sleep(5)
             
         except Exception as e:
-            print(f"Error en el bucle principal: {e}")
-            if mqtt_client:
-                try: mqtt_client.disconnect()
-                except: pass
-            mqtt_client = None
-            await uasyncio.sleep(5)
+            print(f"‼️ Error fatal en el bucle principal: {e}")
+            await uasyncio.sleep(10)
         
+        # Esperar para el siguiente ciclo
         await uasyncio.sleep(PUBLISH_INTERVAL_S)
 
 # --- EJECUCIÓN ---
@@ -160,9 +197,11 @@ if __name__ == "__main__":
         wlan.active(True)
         uasyncio.run(main_loop())
     except KeyboardInterrupt:
-        print("\nPrograma detenido por el usuario.")
+        print("\n🛑 Programa detenido por el usuario.")
     except Exception as e:
-        print(f"Error fatal en el sistema: {e}")
-        print("Reiniciando en 10 segundos...")
+        print(f"‼️ Error crítico: {e}")
+        print("🔄 Reiniciando en 10 segundos...")
         utime.sleep(10)
         machine.reset()
+
+    
