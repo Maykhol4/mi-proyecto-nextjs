@@ -320,7 +320,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
         console.error("Error desconectando:", error);
       }
     }
-    // Forzar reseteo de estado independientemente del resultado
+    // Forzar reseteo de estado independientemente del resultado para permitir reconexión.
     onDisconnected();
   }, [onDisconnected]);
 
