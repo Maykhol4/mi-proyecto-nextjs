@@ -2,7 +2,6 @@
 'use client';
 
 import React, { useState, type FC, useRef } from 'react';
-import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -25,15 +24,13 @@ import {
   BluetoothOff,
   MoreVertical,
   ChevronDown,
-  Power,
-  WifiOff,
   Cloud,
   Layers,
-  Mqtt,
   Radio,
+  CloudOff,
 } from 'lucide-react';
 import type { SensorData, BleConnectorRef } from './ble-connector';
-import { initialSensorData } from './ble-connector';
+import { initialSensorData, BleConnector } from './ble-connector';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,11 +45,6 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useToast } from '@/hooks/use-toast';
 import { useMqtt } from '@/hooks/use-mqtt';
 
-
-const BleConnector = dynamic(() => import('./ble-connector').then(mod => mod.BleConnector), {
-  ssr: false,
-  loading: () => <Button disabled className="w-full h-12">Cargando Módulo Bluetooth...</Button>,
-});
 
 // --- Reusable Components ---
 const SensorCard: FC<{
@@ -285,7 +277,7 @@ export default function HomeClient() {
     if (mode === 'ble' && bleConnectorRef.current) {
       bleConnectorRef.current.handleDisconnect();
     }
-    // Si estamos en modo MQTT, el hook useMqtt se encargará de la desconexión
+    // Si estamos en modo MQTT, el hook useMqtt se encargará de la desconexión al cambiar el estado `enabled`
     setMode('disconnected');
     setBleSensorData(initialSensorData);
     setIsBleConnected(false);
@@ -388,8 +380,8 @@ export default function HomeClient() {
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={handleDisconnect}>
-                          <BluetoothOff className="mr-2 h-4 w-4" />
-                          <span>Desconectar</span>
+                          {mode === 'mqtt' ? <CloudOff className="mr-2 h-4 w-4" /> : <BluetoothOff className="mr-2 h-4 w-4" />}
+                          <span>{mode === 'mqtt' ? 'Desconectar MQTT' : 'Desconectar'}</span>
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -422,8 +414,8 @@ export default function HomeClient() {
                         </DropdownMenuContent>
                       </DropdownMenu>
                       <Button onClick={handleDisconnect} variant="destructive" size="sm">
-                        <BluetoothOff className="mr-2 h-4 w-4" />
-                        Desconectar
+                        {mode === 'mqtt' ? <CloudOff className="mr-2 h-4 w-4" /> : <BluetoothOff className="mr-2 h-4 w-4" />}
+                        {mode === 'mqtt' ? 'Desconectar MQTT' : 'Desconectar'}
                       </Button>
                     </>
                   )}
