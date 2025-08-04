@@ -11,8 +11,9 @@ import bluetooth
 from ble_uart_peripheral import BLEUART
 
 # --- CONFIGURACIÓN ---
-WIFI_SSID = "TP-Link_DF16"
-WIFI_PASSWORD = "29768387"
+# Deja estos vacíos. Se configurarán por BLE.
+WIFI_SSID = ""
+WIFI_PASSWORD = ""
 
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
@@ -49,20 +50,6 @@ def handle_ble_command(command_str):
             # Forzar reconexión en el siguiente ciclo
             if wlan.isconnected():
                 wlan.disconnect()
-
-        elif cmd_type == "wifi_disconnect":
-            if wlan.isconnected():
-                wlan.disconnect()
-                response["message"] = "WiFi disconnected."
-            else:
-                response["message"] = "WiFi already disconnected."
-            print(response["message"])
-
-        elif cmd_type == "restart":
-            response["message"] = "Restarting device..."
-            send_ble_response(response)
-            utime.sleep(1)
-            machine.reset()
 
         elif cmd_type == "set_mode":
             new_mode = cmd_data.get("mode")
@@ -124,6 +111,7 @@ async def connect_to_wifi():
         await uasyncio.sleep(1)
             
     print("❌ Fallo al conectar a WiFi.")
+    wlan.disconnect()
     return False
 
 def connect_to_mqtt():
@@ -211,13 +199,21 @@ async def main_loop():
     while True:
         try:
             # --- Gestión de Conexiones ---
+            wifi_should_be_on = operation_mode in ["hybrid", "mqtt_only"]
             wifi_is_up = wlan.isconnected()
-            if operation_mode in ["hybrid", "mqtt_only"] and not wifi_is_up:
+            
+            if wifi_should_be_on and not wifi_is_up:
                 await connect_to_wifi()
                 wifi_is_up = wlan.isconnected()
+            elif not wifi_should_be_on and wifi_is_up:
+                print("🔌 Desconectando WiFi según el modo de operación.")
+                wlan.disconnect()
+                wifi_is_up = False
+                mqtt_client = None
+
 
             mqtt_is_up = is_mqtt_connected()
-            if wifi_is_up and operation_mode in ["hybrid", "mqtt_only"] and not mqtt_is_up:
+            if wifi_is_up and wifi_should_be_on and not mqtt_is_up:
                 connect_to_mqtt()
 
             # --- Recopilación y Envío de Datos ---
@@ -265,8 +261,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n🛑 Programa detenido.")
     except Exception as e:
-        print(f"‼️ Error crítico: {e}")
+        print(f"‼️ Error crítico: {e}, reiniciando en 10s...")
         utime.sleep(10)
         machine.reset()
-
-    
