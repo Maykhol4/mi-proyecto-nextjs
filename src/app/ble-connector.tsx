@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -90,7 +91,7 @@ const NATIVE_CONNECTION_MONITOR_INTERVAL_MS = 3000;
 export interface BleConnectorRef {
     handleDisconnect: () => Promise<void>;
     sendWifiConfig: (ssid: string, psk: string) => Promise<void>;
-    sendControlCommand: (command: 'wifi_disconnect' | 'restart' | 'set_mode', mode?: 'hybrid' | 'ble_only' | 'mqtt_only') => Promise<void>;
+    sendControlCommand: (command: 'set_mode', mode?: 'hybrid' | 'ble_only' | 'mqtt_only') => Promise<void>;
 }
 
 interface BleConnectorProps {
@@ -599,7 +600,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     toast({ title: 'Comando Enviado', description: 'Configuración WiFi enviada al dispositivo.' });
   };
   
-  const sendControlCommand = async (commandType: 'wifi_disconnect' | 'restart' | 'set_mode', mode?: 'hybrid' | 'ble_only' | 'mqtt_only') => {
+  const sendControlCommand = async (commandType: 'set_mode', mode?: 'hybrid' | 'ble_only' | 'mqtt_only') => {
     let command: object = { type: commandType };
     if (commandType === 'set_mode' && mode) {
         command = { ...command, mode: mode };

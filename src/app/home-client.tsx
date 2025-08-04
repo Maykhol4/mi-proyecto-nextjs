@@ -295,13 +295,7 @@ export default function HomeClient() {
       bleConnectorRef.current?.sendWifiConfig(ssid, psk);
   }
 
-  const handleControlCommand = (command: 'wifi_disconnect' | 'restart' | 'set_mode', mode?: 'hybrid' | 'ble_only' | 'mqtt_only') => {
-    if (command === 'restart') {
-      toast({
-        title: 'Reiniciando Dispositivo',
-        description: 'El dispositivo se reiniciará. Deberás reconectarte.'
-      });
-    }
+  const handleControlCommand = (command: 'set_mode', mode?: 'hybrid' | 'ble_only' | 'mqtt_only') => {
     bleConnectorRef.current?.sendControlCommand(command, mode);
   }
 
@@ -392,14 +386,6 @@ export default function HomeClient() {
                           <Settings className="mr-2 h-4 w-4" />
                           <span>Ajustes WiFi</span>
                         </DropdownMenuItem>
-                         <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')} disabled={mode !== 'ble' || !isBleConnected}>
-                          <WifiOff className="mr-2 h-4 w-4" />
-                          <span>Desconectar WiFi</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => handleControlCommand('restart')} disabled={mode !== 'ble' || !isBleConnected}>
-                          <Power className="mr-2 h-4 w-4" />
-                          <span>Reiniciar Dispositivo</span>
-                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={handleDisconnect}>
                           <BluetoothOff className="mr-2 h-4 w-4" />
@@ -421,15 +407,6 @@ export default function HomeClient() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
-                          <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')}>
-                            <WifiOff className="mr-2 h-4 w-4" />
-                            <span>Desconectar WiFi</span>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => handleControlCommand('restart')}>
-                            <Power className="mr-2 h-4 w-4" />
-                            <span>Reiniciar Dispositivo</span>
-                          </DropdownMenuItem>
-                           <DropdownMenuSeparator />
                            <DropdownMenuItem onSelect={() => handleControlCommand('set_mode', 'hybrid')}>
                               <Layers className="mr-2 h-4 w-4" />
                               <span>Modo Híbrido (BLE+MQTT)</span>
@@ -496,5 +473,3 @@ export default function HomeClient() {
     </>
   );
 }
-
-    
