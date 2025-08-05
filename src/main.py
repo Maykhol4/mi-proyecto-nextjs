@@ -1,266 +1,329 @@
-# main.py - ESP32 con MicroPython - Versión Híbrida y Robusta
-import network
-import uasyncio
-from umqtt.simple import MQTTClient
-import ujson
-import utime
-import machine
-import ubinascii
+import time
+import json
 import random
 import bluetooth
+from machine import reset, unique_id
+from wifi_manager import WiFiManager
 from ble_uart_peripheral import BLEUART
+from umqtt.simple import MQTTClient
+import ubinascii
 
-# --- CONFIGURACIÓN ---
-# Deja estos vacíos. Se configurarán por BLE.
-WIFI_SSID = ""
-WIFI_PASSWORD = ""
-
+# --- CONFIGURACIÓN MQTT ---
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
-CLIENT_ID = f"aquadata-esp32-{ubinascii.hexlify(machine.unique_id()).decode()}"
 MQTT_TOPIC = "aquadata/sensor-data"
-PUBLISH_INTERVAL_S = 5
+CLIENT_ID = f"aquadata-esp32-{ubinascii.hexlify(unique_id()).decode()}"
 
-# --- ESTADO GLOBAL ---
-wlan = network.WLAN(network.STA_IF)
+# --- MODO DE OPERACIÓN ---
+# 'hybrid': Envía datos por BLE y MQTT si hay conexión.
+# 'ble_only': Envía datos solo por BLE, no intenta conectar a MQTT.
+current_mode = 'hybrid' 
+
+# Variables globales para datos de sensores
+sensor_data = {
+    "ph": None,
+    "do_conc": None,
+    "do_sat": None,
+    "temp": None,
+    "timestamp": "",
+    "status": "🟢 All systems normal",
+    "readings_count": {"ph": 0, "do": 0},
+    "errors_count": {"ph": 0, "do": 0},
+    "simulation_cycle": 0,
+    "wifi_status": "disconnected"
+}
+
+simulation_counter = 0
+ble = bluetooth.BLE()
+wifi_manager = WiFiManager()
+uart = None
+command_buffer = ""
 mqtt_client = None
-ble_uart = None
-operation_mode = "hybrid"  # 'hybrid', 'ble_only', 'mqtt_only'
 
-simulation_cycle = 0
-readings_count = {'ph': 0, 'do': 0}
-errors_count = {'ph': 0, 'do': 0}
+def connect_mqtt():
+    """Conecta al broker MQTT si no está conectado."""
+    global mqtt_client
+    if current_mode == 'ble_only':
+        if mqtt_client:
+            try:
+                mqtt_client.disconnect()
+            except Exception:
+                pass
+            mqtt_client = None
+        return False
 
-# --- MANEJO DE COMANDOS BLE ---
+    if mqtt_client is not None:
+        try:
+            mqtt_client.ping()
+            return True
+        except (OSError, AttributeError):
+            print("MQTT ping failed, reconnecting...")
+            mqtt_client = None
+    
+    if wifi_manager.is_connected():
+        try:
+            print(f"Connecting to MQTT Broker: {MQTT_BROKER}...")
+            mqtt_client = MQTTClient(CLIENT_ID, MQTT_BROKER, port=MQTT_PORT, keepalive=60)
+            mqtt_client.connect()
+            print(f"✅ MQTT Connected. Publishing to topic: {MQTT_TOPIC}")
+            return True
+        except Exception as e:
+            print(f"❌ MQTT Connection Error: {e}")
+            mqtt_client = None
+            return False
+    return False
+
 def handle_ble_command(command_str):
-    """Procesar comandos recibidos por BLE."""
-    global operation_mode, WIFI_SSID, WIFI_PASSWORD
+    """Procesar comandos recibidos por BLE"""
+    global sensor_data, current_mode
     try:
-        cmd_data = ujson.loads(command_str)
+        print(f"📨 Command received: {command_str}")
+        
+        try:
+            cmd_data = json.loads(command_str)
+            print(f"✅ JSON parsed successfully: {cmd_data.get('type', 'unknown')}")
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON parse error: {e}")
+            response = {"type": "error", "message": f"Invalid JSON format: {str(e)}"}
+            send_ble_response(response)
+            return
+        
         cmd_type = cmd_data.get("type", "").lower()
-        print(f"📨 Comando BLE recibido: {cmd_type}")
-
-        response = {"status": "success", "type": f"{cmd_type}_response"}
-
-        if cmd_type == "wifi_config":
-            WIFI_SSID = cmd_data.get("ssid")
-            WIFI_PASSWORD = cmd_data.get("password")
-            response["message"] = f"WiFi credentials updated for SSID: {WIFI_SSID}"
-            print(response["message"])
-            # Forzar reconexión en el siguiente ciclo
-            if wlan.isconnected():
-                wlan.disconnect()
+        
+        if cmd_type.startswith("wifi_"):
+            print(f"🔧 Delegating WiFi command to WiFiManager: {cmd_type}")
+            if cmd_type == "wifi_config":
+                ssid = cmd_data.get("ssid", "N/A")
+                print(f"🔧 WiFi config request - SSID: {ssid}")
+                print("🔌 Disconnecting current WiFi before reconfiguration...")
+                wifi_manager.disconnect()
+                time.sleep(2)
+            
+            response = wifi_manager.process_ble_command(cmd_data)
+            
+            if cmd_type in ["wifi_config", "wifi_disconnect"]:
+                time.sleep(1)
+                updated_status = get_wifi_status()
+                sensor_data["wifi_status"] = updated_status
+                print(f"🔄 WiFi status updated to: {updated_status}")
+                if wifi_manager.is_connected():
+                    connect_mqtt()
+            
+            send_ble_response(response)
+        
+        elif cmd_type == "restart":
+            print("🔄 RESTART command received")
+            response = {"type": "restart_response", "status": "success", "message": "Restarting in 3 seconds..."}
+            send_ble_response(response)
+            time.sleep(3)
+            reset()
 
         elif cmd_type == "set_mode":
             new_mode = cmd_data.get("mode")
-            if new_mode in ["hybrid", "ble_only", "mqtt_only"]:
-                operation_mode = new_mode
-                response["message"] = f"Operation mode set to {operation_mode}"
+            if new_mode in ['hybrid', 'ble_only']:
+                current_mode = new_mode
+                print(f"✅ Mode changed to: {current_mode}")
+                response = {"type": "mode_change_response", "status": "success", "message": f"Mode set to {current_mode}"}
+                if new_mode == 'ble_only' and mqtt_client:
+                    try:
+                        mqtt_client.disconnect()
+                    except Exception:
+                        pass
+                    mqtt_client = None
+                    print("MQTT disconnected due to mode change.")
             else:
-                response["status"] = "error"
-                response["message"] = f"Invalid mode: {new_mode}"
-            print(response["message"])
-            
-        else:
-            response["status"] = "error"
-            response["message"] = f"Unknown command: {cmd_type}"
+                response = {"type": "mode_change_response", "status": "error", "message": f"Invalid mode: {new_mode}"}
+            send_ble_response(response)
 
+        elif cmd_type == "get_sensor_data":
+            sensor_data["wifi_status"] = get_wifi_status()
+            send_ble_response(sensor_data)
+        
+        else:
+            response = {"type": "error", "message": f"Unknown command: {cmd_type}"}
+            send_ble_response(response)
+            
+    except Exception as e:
+        print(f"❌ Command error: {e}")
+        response = {"type": "error", "message": f"Command processing error: {str(e)}"}
         send_ble_response(response)
 
+def send_ble_response(response):
+    """Enviar respuesta por BLE"""
+    global uart
+    try:
+        if uart and len(uart._connections) > 0:
+            json_response = json.dumps(response) + "\n"
+            uart.write(json_response.encode('utf-8'))
+            print(f"📤 BLE Response sent: {response.get('type', 'unknown')}")
+        else:
+            print("⚠️ No BLE connection for response")
     except Exception as e:
-        print(f"❌ Error procesando comando BLE: {e}")
-        send_ble_response({"status": "error", "message": str(e)})
+        print(f"❌ BLE Send error: {e}")
 
 def on_ble_rx():
-    """Callback para cuando se reciben datos por BLE."""
-    global ble_uart
+    """Callback para datos recibidos por BLE - usando la API de BLEUART"""
+    global command_buffer, uart
     try:
-        command_str = ble_uart.read().decode().strip()
-        if command_str:
-            handle_ble_command(command_str)
-    except Exception as e:
-        print(f"❌ Error en on_ble_rx: {e}")
-
-def send_ble_response(response_data):
-    """Envía una respuesta JSON por BLE si está conectado."""
-    if ble_uart and ble_uart.is_connected():
-        try:
-            message = ujson.dumps(response_data) + '\n'
-            ble_uart.write(message)
-            print(f"📤 Respuesta BLE enviada: {message.strip()}")
-        except Exception as e:
-            print(f"❌ Error enviando respuesta BLE: {e}")
-
-# --- FUNCIONES DE RED ---
-
-async def connect_to_wifi():
-    """Se conecta a la red WiFi de forma asíncrona y robusta."""
-    if wlan.isconnected() or not WIFI_SSID:
-        return wlan.isconnected()
+        while uart.any():
+            chunk = uart.read().decode('utf-8')
+            command_buffer += chunk
         
-    print(f"📡 Conectando a WiFi: {WIFI_SSID}...")
-    wlan.active(True)
-    wlan.connect(WIFI_SSID, WIFI_PASSWORD)
-    
-    max_wait = 20
-    while max_wait > 0:
-        if wlan.isconnected():
-            print(f"✅ WiFi conectado. IP: {wlan.ifconfig()[0]}")
-            return True
-        max_wait -= 1
-        await uasyncio.sleep(1)
+        while '\n' in command_buffer:
+            command, command_buffer = command_buffer.split('\n', 1)
+            if command.strip():
+                handle_ble_command(command.strip())
+        
+        if len(command_buffer) > 500:
+            print("⚠️ Buffer overflow, clearing...")
+            command_buffer = ""
             
-    print("❌ Fallo al conectar a WiFi.")
-    wlan.disconnect()
+    except Exception as e:
+        print(f"❌ RX Buffer error: {e}")
+        command_buffer = ""
+
+def get_wifi_status():
+    """Obtener el estado detallado de WiFi"""
+    try:
+        if wifi_manager.is_connected():
+            return "connected"
+        return "disconnected"
+    except Exception as e:
+        print(f"❌ Error getting WiFi status: {e}")
+        return "disconnected"
+
+def simulate_sensors():
+    """Simular todos los sensores"""
+    global simulation_counter
+    ph_value = round(7.2 + 0.8 * (random.random() - 0.5) + 0.3 * (simulation_counter % 100) / 100, 2)
+    temp = round(22.5 + 2.0 * (random.random() - 0.5) + 1.5 * (simulation_counter % 288) / 288, 1)
+    do_conc = round(10.0 - (temp - 20) * 0.4 + 2.0 * (random.random() - 0.5) - 0.5 * random.random(), 1)
+    theoretical_max = 10.5 - (temp - 20) * 0.3
+    do_sat = round((do_conc / theoretical_max) * 100, 1)
+    return ph_value, do_conc, do_sat, temp
+
+def get_status_indicator(ph, do_conc, do_sat):
+    if (ph < 6.0 or ph > 9.0) or (do_conc < 4.0) or (do_sat < 60):
+        return "🔴 Critical levels detected"
+    elif (ph < 6.5 or ph > 8.5) or (do_conc < 6.0) or (do_sat < 80):
+        return "🟡 Warning levels detected"
+    return "🟢 All systems normal"
+
+def send_sensor_data_ble():
+    """Enviar datos de sensores por BLE"""
+    if uart and len(uart._connections) > 0:
+        try:
+            json_data = json.dumps(sensor_data) + "\n"
+            uart.write(json_data.encode('utf-8'))
+            return True
+        except Exception as e:
+            print(f"❌ BLE send error: {e}")
     return False
 
-def connect_to_mqtt():
-    """Se conecta al broker MQTT. Devuelve True si es exitoso."""
+def send_sensor_data_mqtt():
+    """Enviar datos de sensores por MQTT"""
     global mqtt_client
+    if current_mode == 'hybrid' and mqtt_client and wifi_manager.is_connected():
+        try:
+            # mqtt_client.check_msgs() # No es necesario en este flujo simple
+            json_data = json.dumps(sensor_data) + "\n"
+            mqtt_client.publish(MQTT_TOPIC, json_data)
+            return True
+        except Exception as e:
+            print(f"❌ MQTT send error: {e}. Reconnecting...")
+            mqtt_client = None
+            connect_mqtt()
+    return False
+
+def main_loop():
+    """Bucle principal"""
+    global sensor_data, simulation_counter, uart
+    
+    print("🔵 Initializing BLEUART...")
     try:
-        mqtt_client = MQTTClient(CLIENT_ID, MQTT_BROKER, port=MQTT_PORT, keepalive=60)
-        mqtt_client.connect()
-        print(f"✅ MQTT conectado a {MQTT_BROKER}")
-        return True
+        uart = BLEUART(ble, name="AQUADATA-2.0", rxbuf=256)
+        uart.irq(handler=on_ble_rx)
+        print("✅ BLEUART initialized")
     except Exception as e:
-        print(f"❌ Error conectando a MQTT: {e}")
-        mqtt_client = None
-        return False
-
-def is_mqtt_connected():
-    """Verifica si MQTT está conectado intentando un ping."""
-    if mqtt_client is None: return False
-    try:
-        mqtt_client.ping()
-        return True
-    except (OSError, AttributeError):
-        return False
-
-# --- SIMULACIÓN Y LÓGICA DE DATOS ---
-
-def simulate_sensor_data():
-    """Genera datos de sensores simulados."""
-    global simulation_cycle, readings_count, errors_count
-    simulation_cycle += 1
+        print(f"❌ BLE init error: {e}")
+        return
     
-    # Simulación de valores
-    ph_value = round(random.uniform(6.5, 8.0), 2)
-    do_conc = round(random.uniform(5.0, 9.0), 2)
-    do_sat = round(random.uniform(85.0, 110.0), 1)
-    temp = round(random.uniform(20.0, 26.0), 1)
-
-    # Simulación de errores
-    if random.random() < 0.05:
-        ph_value = None
-        errors_count['ph'] += 1
-    else:
-        readings_count['ph'] += 1
-
-    if random.random() < 0.05:
-        do_conc = None
-        errors_count['do'] += 1
-    else:
-        readings_count['do'] += 1
+    print("📶 Trying WiFi auto-connect...")
+    if wifi_manager.auto_connect():
+        connect_mqtt()
     
-    # Determinar estado
-    status = "🟢 All systems normal"
-    if ph_value is None or do_conc is None:
-        status = "🔴 Sensor error detected"
-    elif ph_value < 6.5 or ph_value > 8.5 or do_conc < 6.0:
-        status = "🟡 Warning levels detected"
-
-    return {
-        "ph": ph_value,
-        "do_conc": do_conc,
-        "do_sat": do_sat,
-        "temp": temp,
-        "timestamp": f"{utime.localtime()[3]:02}:{utime.localtime()[4]:02}:{utime.localtime()[5]:02}",
-        "status": status,
-        "readings_count": readings_count.copy(),
-        "errors_count": errors_count.copy(),
-        "simulation_cycle": simulation_cycle,
-        "wifi_status": "connected" if wlan.isconnected() else "disconnected"
-    }
-
-# --- BUCLE PRINCIPAL ---
-
-async def main_loop():
-    """Bucle principal para conectar y publicar datos de forma robusta."""
-    global ble_uart, mqtt_client
+    readings = {"ph": 0, "do": 0}
+    errors = {"ph": 0, "do": 0}
     
-    # Inicializar BLE
-    ble = bluetooth.BLE()
-    ble_uart = BLEUART(ble, name="AQUADATA-2.0")
-    ble_uart.irq(handler=on_ble_rx)
-    print("🔵 BLE UART Inicializado. Anunciando como 'AQUADATA-2.0'")
-
-    print(f"🚀 Iniciando sistema AquaData. Modo inicial: {operation_mode}")
+    print("🔬 AQUADATA 2.0 - Hybrid BLE + MQTT")
+    print("=" * 60)
     
     while True:
         try:
-            # --- Gestión de Conexiones ---
-            wifi_should_be_on = operation_mode in ["hybrid", "mqtt_only"]
-            wifi_is_up = wlan.isconnected()
+            simulation_counter += 1
+            wifi_status_detailed = get_wifi_status()
             
-            if wifi_should_be_on and not wifi_is_up:
-                await connect_to_wifi()
-                wifi_is_up = wlan.isconnected()
-            elif not wifi_should_be_on and wifi_is_up:
-                print("🔌 Desconectando WiFi según el modo de operación.")
-                wlan.disconnect()
-                wifi_is_up = False
-                mqtt_client = None
+            if current_mode == 'hybrid' and wifi_status_detailed == "connected" and mqtt_client is None:
+                connect_mqtt()
 
-
-            mqtt_is_up = is_mqtt_connected()
-            if wifi_is_up and wifi_should_be_on and not mqtt_is_up:
-                connect_to_mqtt()
-
-            # --- Recopilación y Envío de Datos ---
-            sensor_data = simulate_sensor_data()
-            message = ujson.dumps(sensor_data)
-            message_with_delimiter = message + '\n'
-
-            # 1. Enviar por Bluetooth
-            if operation_mode in ["hybrid", "ble_only"] and ble_uart.is_connected():
-                try:
-                    ble_uart.write(message_with_delimiter)
-                    print(f"📤 BLE (Ciclo {simulation_cycle}): Datos enviados.")
-                except Exception as e:
-                    print(f"❌ Error enviando por BLE: {e}")
-
-            # 2. Enviar por MQTT
-            if operation_mode in ["hybrid", "mqtt_only"] and wifi_is_up and is_mqtt_connected():
-                try:
-                    mqtt_client.publish(MQTT_TOPIC, message_with_delimiter, retain=False)
-                    print(f"📤 MQTT (Ciclo {simulation_cycle}): Datos publicados.")
-                except Exception as e:
-                    print(f"❌ Error publicando en MQTT: {e}")
-                    mqtt_client = None # Forzar reconexión
-
-        except OSError as e:
-            print(f"‼️ Error de red/OS: {e}. Reiniciando conexiones...")
-            if mqtt_client:
-                try: mqtt_client.disconnect()
-                except: pass
-            mqtt_client = None
-            if wlan.isconnected():
-                wlan.disconnect()
-            await uasyncio.sleep(5)
+            current_time = time.localtime()
+            timestamp = "{:02d}:{:02d}:{:02d}".format(current_time[3], current_time[4], current_time[5])
             
+            ph_value, do_conc, do_sat, temp = simulate_sensors()
+            
+            readings["ph"] += 1
+            readings["do"] += 1
+            
+            sensor_data.update({
+                "ph": ph_value,
+                "do_conc": do_conc,
+                "do_sat": do_sat,
+                "temp": temp,
+                "timestamp": timestamp,
+                "status": get_status_indicator(ph_value, do_conc, do_sat),
+                "readings_count": readings.copy(),
+                "errors_count": errors.copy(),
+                "simulation_cycle": simulation_counter,
+                "wifi_status": wifi_status_detailed
+            })
+            
+            sent_ble = send_sensor_data_ble()
+            sent_mqtt = send_sensor_data_mqtt()
+            
+            ble_status = "🟢" if sent_ble else "🔴"
+            mqtt_status_log = "🟢" if sent_mqtt else "🔴"
+            print(f"{timestamp} | Mode:{current_mode} | BLE:{ble_status} MQTT:{mqtt_status_log} | {sensor_data['status']} | #{simulation_counter}")
+            
+            time.sleep(3)
+            
+        except KeyboardInterrupt:
+            break
         except Exception as e:
-            print(f"‼️ Error fatal en el bucle principal: {e}")
-            await uasyncio.sleep(10)
-        
-        await uasyncio.sleep(PUBLISH_INTERVAL_S)
+            print(f"❌ Main loop error: {e}")
+            time.sleep(5)
 
-# --- EJECUCIÓN ---
 if __name__ == "__main__":
+    print("=" * 60)
+    print("    🌊 AQUADATA 2.0 - Hybrid Mode 🌊")
+    print("=" * 60)
+    
     try:
-        uasyncio.run(main_loop())
+        main_loop()
     except KeyboardInterrupt:
-        print("\n🛑 Programa detenido.")
+        print(f"\n🛑 AQUADATA 2.0 STOPPED")
     except Exception as e:
-        print(f"‼️ Error crítico: {e}, reiniciando en 10s...")
-        utime.sleep(10)
-        machine.reset()
+        print(f"\n❌ Critical error: {e}")
+    finally:
+        try:
+            wifi_manager.disconnect()
+            if mqtt_client:
+                mqtt_client.disconnect()
+            if uart:
+                uart.close()
+            ble.active(False)
+            print("🔵 BLE, WiFi, and MQTT deactivated")
+        except:
+            pass
+        print("=" * 60)
+        print("Thanks for using AQUADATA 2.0! 👋🌊")
+        print("=" * 60)
