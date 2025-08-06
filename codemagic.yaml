@@ -18,11 +18,12 @@ workflows:
       - name: 🔑 Set up signing (optional, si usas .keystore)
         script: |
           echo $CM_KEYSTORE | base64 --decode > /tmp/keystore.keystore
-      - name: 🏗️ Build APK (Release)
+      - name: 🏗️ Build APK (Debug)
         script: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
     artifacts:
       - android/app/build/outputs/**/*.apk
+
 
