@@ -4,25 +4,25 @@ workflows:
     max_build_duration: 15
     instance_type: mac_mini_m1
     environment:
-      node: "20.11.1"   # ✅ ¡Versión válida para Next.js!
+      node: "18.18.2"
       java: "17"
       groups:
         - signing
     scripts:
-      - name: 📦 Install NPM dependencies
+      - name: 📦 Install dependencies
         script: npm install
       - name: 🌐 Build Web App
         script: npm run build
-      - name: ⚡ Sync Capacitor
+      - name: ⚡ Sync Capacitor with Android
         script: npx cap sync android
-      - name: 🔑 Set up code signing
+      - name: 🔑 Set up signing (optional, si usas .keystore)
         script: |
           echo $CM_KEYSTORE | base64 --decode > /tmp/keystore.keystore
-      - name: 🏗️ Build Android APK (Release)
+      - name: 🏗️ Build APK (Release)
         script: |
           cd android
           chmod +x ./gradlew
           ./gradlew assembleRelease
     artifacts:
-      - android/app/build/outputs/apk/release/app-release.apk
+      - android/app/build/outputs/**/*.apk
 
