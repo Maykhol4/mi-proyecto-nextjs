@@ -2,22 +2,16 @@ import time
 import json
 import random
 import bluetooth
-from machine import reset, unique_id
+from machine import reset
 from wifi_manager import WiFiManager
-from ble_uart_peripheral import BLEUART
-from umqtt.simple import MQTTClient
+from ble_uart_peripheral import BLEUART  
 import ubinascii
 
 # --- CONFIGURACIÓN MQTT ---
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_TOPIC = "aquadata/sensor-data"
-CLIENT_ID = f"aquadata-esp32-{ubinascii.hexlify(unique_id()).decode()}"
-
-# --- MODO DE OPERACIÓN ---
-# 'hybrid': Envía datos por BLE y MQTT si hay conexión.
-# 'ble_only': Envía datos solo por BLE, no intenta conectar a MQTT.
-current_mode = 'hybrid' 
+CLIENT_ID = f"aquadata-esp32-{ubinascii.hexlify(reset.unique_id()).decode()}"
 
 # Variables globales para datos de sensores
 sensor_data = {
@@ -43,15 +37,6 @@ mqtt_client = None
 def connect_mqtt():
     """Conecta al broker MQTT si no está conectado."""
     global mqtt_client
-    if current_mode == 'ble_only':
-        if mqtt_client:
-            try:
-                mqtt_client.disconnect()
-            except Exception:
-                pass
-            mqtt_client = None
-        return False
-
     if mqtt_client is not None:
         try:
             mqtt_client.ping()
@@ -63,6 +48,7 @@ def connect_mqtt():
     if wifi_manager.is_connected():
         try:
             print(f"Connecting to MQTT Broker: {MQTT_BROKER}...")
+            from umqtt.simple import MQTTClient
             mqtt_client = MQTTClient(CLIENT_ID, MQTT_BROKER, port=MQTT_PORT, keepalive=60)
             mqtt_client.connect()
             print(f"✅ MQTT Connected. Publishing to topic: {MQTT_TOPIC}")
@@ -75,69 +61,42 @@ def connect_mqtt():
 
 def handle_ble_command(command_str):
     """Procesar comandos recibidos por BLE"""
-    global sensor_data, current_mode
+    global sensor_data
     try:
         print(f"📨 Command received: {command_str}")
         
         try:
             cmd_data = json.loads(command_str)
             print(f"✅ JSON parsed successfully: {cmd_data.get('type', 'unknown')}")
-        except json.JSONDecodeError as e:
-            print(f"❌ JSON parse error: {e}")
-            response = {"type": "error", "message": f"Invalid JSON format: {str(e)}"}
+        except ValueError: # Changed to ValueError for broader compatibility
+            print(f"❌ JSON parse error")
+            response = {"type": "error", "message": "Invalid JSON format"}
             send_ble_response(response)
             return
         
         cmd_type = cmd_data.get("type", "").lower()
         
-        if cmd_type.startswith("wifi_"):
-            print(f"🔧 Delegating WiFi command to WiFiManager: {cmd_type}")
-            if cmd_type == "wifi_config":
-                ssid = cmd_data.get("ssid", "N/A")
-                print(f"🔧 WiFi config request - SSID: {ssid}")
-                print("🔌 Disconnecting current WiFi before reconfiguration...")
+        if cmd_type == "wifi_config":
+            print(f"🔧 WiFi config command received")
+            ssid = cmd_data.get("ssid")
+            password = cmd_data.get("password")
+            if ssid:
+                print(f"🔧 Configuring WiFi for SSID: {ssid}")
                 wifi_manager.disconnect()
                 time.sleep(2)
-            
-            response = wifi_manager.process_ble_command(cmd_data)
-            
-            if cmd_type in ["wifi_config", "wifi_disconnect"]:
+                wifi_manager.connect(ssid, password)
+                
                 time.sleep(1)
                 updated_status = get_wifi_status()
                 sensor_data["wifi_status"] = updated_status
-                print(f"🔄 WiFi status updated to: {updated_status}")
+
+                response = {"type": "wifi_config_response", "status": "success", "message": f"Attempting to connect to {ssid}"}
+                send_ble_response(response)
+                
                 if wifi_manager.is_connected():
                     connect_mqtt()
-            
-            send_ble_response(response)
-        
-        elif cmd_type == "restart":
-            print("🔄 RESTART command received")
-            response = {"type": "restart_response", "status": "success", "message": "Restarting in 3 seconds..."}
-            send_ble_response(response)
-            time.sleep(3)
-            reset()
-
-        elif cmd_type == "set_mode":
-            new_mode = cmd_data.get("mode")
-            if new_mode in ['hybrid', 'ble_only']:
-                current_mode = new_mode
-                print(f"✅ Mode changed to: {current_mode}")
-                response = {"type": "mode_change_response", "status": "success", "message": f"Mode set to {current_mode}"}
-                if new_mode == 'ble_only' and mqtt_client:
-                    try:
-                        mqtt_client.disconnect()
-                    except Exception:
-                        pass
-                    mqtt_client = None
-                    print("MQTT disconnected due to mode change.")
             else:
-                response = {"type": "mode_change_response", "status": "error", "message": f"Invalid mode: {new_mode}"}
-            send_ble_response(response)
-
-        elif cmd_type == "get_sensor_data":
-            sensor_data["wifi_status"] = get_wifi_status()
-            send_ble_response(sensor_data)
+                send_ble_response({"type": "wifi_config_response", "status": "error", "message": "SSID is required"})
         
         else:
             response = {"type": "error", "message": f"Unknown command: {cmd_type}"}
@@ -145,7 +104,7 @@ def handle_ble_command(command_str):
             
     except Exception as e:
         print(f"❌ Command error: {e}")
-        response = {"type": "error", "message": f"Command processing error: {str(e)}"}
+        response = {"type": "error", "message": "Command processing error"}
         send_ble_response(response)
 
 def send_ble_response(response):
@@ -162,7 +121,7 @@ def send_ble_response(response):
         print(f"❌ BLE Send error: {e}")
 
 def on_ble_rx():
-    """Callback para datos recibidos por BLE - usando la API de BLEUART"""
+    """Callback para datos recibidos por BLE"""
     global command_buffer, uart
     try:
         while uart.any():
@@ -188,8 +147,7 @@ def get_wifi_status():
         if wifi_manager.is_connected():
             return "connected"
         return "disconnected"
-    except Exception as e:
-        print(f"❌ Error getting WiFi status: {e}")
+    except Exception:
         return "disconnected"
 
 def simulate_sensors():
@@ -223,9 +181,8 @@ def send_sensor_data_ble():
 def send_sensor_data_mqtt():
     """Enviar datos de sensores por MQTT"""
     global mqtt_client
-    if current_mode == 'hybrid' and mqtt_client and wifi_manager.is_connected():
+    if mqtt_client and wifi_manager.is_connected():
         try:
-            # mqtt_client.check_msgs() # No es necesario en este flujo simple
             json_data = json.dumps(sensor_data) + "\n"
             mqtt_client.publish(MQTT_TOPIC, json_data)
             return True
@@ -255,7 +212,7 @@ def main_loop():
     readings = {"ph": 0, "do": 0}
     errors = {"ph": 0, "do": 0}
     
-    print("🔬 AQUADATA 2.0 - Hybrid BLE + MQTT")
+    print("🔬 AQUADATA 2.0 - Simplified BLE + MQTT")
     print("=" * 60)
     
     while True:
@@ -263,7 +220,7 @@ def main_loop():
             simulation_counter += 1
             wifi_status_detailed = get_wifi_status()
             
-            if current_mode == 'hybrid' and wifi_status_detailed == "connected" and mqtt_client is None:
+            if wifi_status_detailed == "connected" and mqtt_client is None:
                 connect_mqtt()
 
             current_time = time.localtime()
@@ -287,12 +244,8 @@ def main_loop():
                 "wifi_status": wifi_status_detailed
             })
             
-            sent_ble = send_sensor_data_ble()
-            sent_mqtt = send_sensor_data_mqtt()
-            
-            ble_status = "🟢" if sent_ble else "🔴"
-            mqtt_status_log = "🟢" if sent_mqtt else "🔴"
-            print(f"{timestamp} | Mode:{current_mode} | BLE:{ble_status} MQTT:{mqtt_status_log} | {sensor_data['status']} | #{simulation_counter}")
+            send_sensor_data_ble()
+            send_sensor_data_mqtt()
             
             time.sleep(3)
             
@@ -304,7 +257,7 @@ def main_loop():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("    🌊 AQUADATA 2.0 - Hybrid Mode 🌊")
+    print("    🌊 AQUADATA 2.0 - Simplified Mode 🌊")
     print("=" * 60)
     
     try:

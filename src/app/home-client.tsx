@@ -23,13 +23,9 @@ import {
   Save,
   BluetoothOff,
   MoreVertical,
-  ChevronDown,
   Cloud,
-  RadioTower,
-  Smartphone,
   CloudOff,
-  WifiOff,
-  Power
+  WifiOff
 } from 'lucide-react';
 import type { SensorData, BleConnectorRef } from './ble-connector';
 import { initialSensorData, BleConnector } from './ble-connector';
@@ -42,7 +38,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useToast } from '@/hooks/use-toast';
@@ -290,18 +285,6 @@ export default function HomeClient() {
       bleConnectorRef.current?.sendWifiConfig(ssid, psk);
   }
 
-  const handleControlCommand = (command: 'wifi_disconnect' | 'restart') => {
-    bleConnectorRef.current?.sendControlCommand(command);
-  }
-
-  const handleModeCommand = (mode: 'hybrid' | 'ble_only') => {
-    bleConnectorRef.current?.sendModeCommand(mode);
-    toast({
-        title: 'Comando de Modo Enviado',
-        description: `Solicitando cambiar a modo: ${mode}`
-    });
-  }
-
   const handleMqttConnect = () => {
     setMode('mqtt');
     setIsMqttModalOpen(false);
@@ -388,24 +371,6 @@ export default function HomeClient() {
                           <Settings className="mr-2 h-4 w-4" />
                           <span>Ajustes WiFi</span>
                         </DropdownMenuItem>
-                         <DropdownMenuLabel>Comandos</DropdownMenuLabel>
-                         <DropdownMenuSeparator />
-                         <DropdownMenuItem onSelect={() => handleModeCommand('hybrid')} disabled={mode !== 'ble' || !isBleConnected}>
-                           <RadioTower className="mr-2 h-4 w-4" />
-                           <span>Modo Híbrido (BLE+MQTT)</span>
-                         </DropdownMenuItem>
-                         <DropdownMenuItem onSelect={() => handleModeCommand('ble_only')} disabled={mode !== 'ble' || !isBleConnected}>
-                           <Smartphone className="mr-2 h-4 w-4" />
-                           <span>Modo solo BLE</span>
-                         </DropdownMenuItem>
-                         <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')} disabled={mode !== 'ble' || !isBleConnected}>
-                          <WifiOff className="mr-2 h-4 w-4" />
-                          <span>Desconectar WiFi</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => handleControlCommand('restart')} disabled={mode !== 'ble' || !isBleConnected}>
-                          <Power className="mr-2 h-4 w-4" />
-                          <span>Reiniciar Dispositivo</span>
-                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={handleDisconnect}>
                           {mode === 'mqtt' ? <CloudOff className="mr-2 h-4 w-4" /> : <BluetoothOff className="mr-2 h-4 w-4" />}
@@ -419,33 +384,6 @@ export default function HomeClient() {
                           <Settings className="mr-2 h-4 w-4" />
                           Ajustes WiFi
                       </Button>
-                       <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" disabled={mode !== 'ble' || !isBleConnected}>
-                            Comandos
-                            <ChevronDown className="ml-2 h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                          <DropdownMenuLabel>Modo de Operación</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onSelect={() => handleModeCommand('hybrid')}>
-                            <RadioTower className="mr-2 h-4 w-4" />
-                            <span>Activar Modo Híbrido (BLE+MQTT)</span>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => handleModeCommand('ble_only')}>
-                            <Smartphone className="mr-2 h-4 w-4" />
-                            <span>Activar Modo solo BLE</span>
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuLabel>Otros Comandos</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onSelect={() => handleControlCommand('wifi_disconnect')}>
-                            <WifiOff className="mr-2 h-4 w-4" />
-                            <span>Desconectar WiFi</span>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                       <Button onClick={handleDisconnect} variant="destructive" size="sm">
                         {mode === 'mqtt' ? <CloudOff className="mr-2 h-4 w-4" /> : <BluetoothOff className="mr-2 h-4 w-4" />}
                         {mode === 'mqtt' ? 'Desconectar MQTT' : 'Desconectar'}

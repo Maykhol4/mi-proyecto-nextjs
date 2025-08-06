@@ -90,8 +90,6 @@ const CHUNK_DELAY_MS = 100; // Retraso entre chunks
 export interface BleConnectorRef {
     handleDisconnect: () => Promise<void>;
     sendWifiConfig: (ssid: string, psk: string) => Promise<void>;
-    sendControlCommand: (command: 'wifi_disconnect' | 'restart') => Promise<void>;
-    sendModeCommand: (mode: 'hybrid' | 'ble_only') => Promise<void>;
 }
 
 interface BleConnectorProps {
@@ -602,21 +600,9 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     toast({ title: 'Comando Enviado', description: 'Configuración WiFi enviada al dispositivo.' });
   };
   
-  const sendControlCommand = async (commandType: 'wifi_disconnect' | 'restart') => {
-    let command: object = { type: commandType };
-    await sendCommand(command);
-    toast({ title: 'Comando Enviado', description: `Comando '${commandType}' enviado al dispositivo.` });
-  }
-
-  const sendModeCommand = async (mode: 'hybrid' | 'ble_only') => {
-    await sendCommand({ type: 'set_mode', mode: mode });
-  }
-
   React.useImperativeHandle(ref, () => ({
       handleDisconnect,
       sendWifiConfig,
-      sendControlCommand,
-      sendModeCommand
   }));
 
   const handleScanModalClose = async () => {
