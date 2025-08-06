@@ -4,7 +4,6 @@ workflows:
     max_build_duration: 15
     instance_type: mac_mini_m1
     environment:
-      android_sdk_version: "34"
       node: "18.17.1"
       java: "17"
       groups:
@@ -26,3 +25,4 @@ workflows:
           ./gradlew assembleRelease
     artifacts:
       - android/app/build/outputs/apk/release/app-release.apk
+
