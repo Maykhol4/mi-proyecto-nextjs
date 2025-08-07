@@ -3,7 +3,7 @@
 
 import React, { useState, type FC, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Droplets,
@@ -231,7 +231,7 @@ export default function HomeClient() {
   // Store data history
   React.useEffect(() => {
     // Save a record if we are in a connected mode and the incoming data has a timestamp
-    if (mode !== 'disconnected' && sensorData && sensorData.timestamp !== initialSensorData.timestamp) {
+    if (mode !== 'disconnected' && sensorData && sensorData.timestamp && sensorData.timestamp !== initialSensorData.timestamp) {
       const now = new Date();
       // Add a full ISO timestamp for better CSV compatibility
       const dataPointWithTimestamp = {
@@ -527,20 +527,10 @@ export default function HomeClient() {
 
             <Card className="mb-8">
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
+                <CardTitle>
                   <div className="flex items-center space-x-2">
                     <TrendingUp className="w-5 h-5" />
                     <span>Estadísticas del Dispositivo</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Button onClick={handleExportCsv} variant="outline" size="sm" disabled={historyData.length === 0}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Exportar CSV ({historyData.length})
-                    </Button>
-                     <Button onClick={handleClearHistory} variant="destructive" size="sm" disabled={historyData.length === 0}>
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Limpiar Historial
-                    </Button>
                   </div>
                 </CardTitle>
               </CardHeader>
@@ -552,6 +542,16 @@ export default function HomeClient() {
                   <div className="text-center p-4 bg-orange-50 rounded-lg"><div className="text-2xl font-bold text-orange-600">{sensorData.errors_count?.do ?? 0}</div><div className="text-sm text-muted-foreground mt-1">Errores DO</div></div>
                 </div>
               </CardContent>
+              <CardFooter className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-4">
+                 <Button onClick={handleExportCsv} variant="outline" size="sm" disabled={historyData.length === 0}>
+                   <Download className="mr-2 h-4 w-4" />
+                   Exportar CSV ({historyData.length})
+                 </Button>
+                 <Button onClick={handleClearHistory} variant="destructive" size="sm" disabled={historyData.length === 0}>
+                   <Trash2 className="mr-2 h-4 w-4" />
+                   Limpiar Historial
+                 </Button>
+              </CardFooter>
             </Card>
           </main>
         </div>
