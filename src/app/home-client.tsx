@@ -230,7 +230,8 @@ export default function HomeClient() {
   
   // Store data history
   React.useEffect(() => {
-    if (mode !== 'disconnected' && sensorData && sensorData.ph !== null) {
+    // Save a record if we are in a connected mode and the incoming data has a timestamp
+    if (mode !== 'disconnected' && sensorData && sensorData.timestamp !== initialSensorData.timestamp) {
       const now = new Date();
       // Add a full ISO timestamp for better CSV compatibility
       const dataPointWithTimestamp = {
