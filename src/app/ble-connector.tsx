@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Bluetooth, Search } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 // Interfaces
@@ -90,6 +89,8 @@ const CHUNK_DELAY_MS = 100; // Retraso entre chunks
 export interface BleConnectorRef {
     handleDisconnect: () => Promise<void>;
     sendWifiConfig: (ssid: string, psk: string) => Promise<void>;
+    getIsConnecting: () => boolean;
+    handleConnect: () => Promise<void>;
 }
 
 interface BleConnectorProps {
@@ -220,7 +221,15 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   }, [toast]);
 
   const onDisconnected = useCallback(() => {
-    if (!isMountedRef.current || !connectedDeviceRef.current) return;
+    if (!isMountedRef.current) return;
+    
+    // Only show toast if there was a device connected
+    if (connectedDeviceRef.current) {
+        toast({
+            title: 'Desconectado',
+            description: 'El dispositivo Bluetooth se ha desconectado.',
+        });
+    }
     
     console.log("Device disconnected. Cleaning up state.");
 
@@ -249,10 +258,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     // Reset sensor data on UI
     setInitialSensorData();
     
-    toast({
-      title: 'Desconectado',
-      description: 'El dispositivo Bluetooth se ha desconectado.',
-    });
   }, [toast, setIsConnected, setInitialSensorData]);
 
 
@@ -286,7 +291,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
                   });
               }
               
-              // 2. Verificar INDEPENDIENTEMENTE si contiene datos de sensores
               const hasSensorData = typeof jsonData.ph !== 'undefined' || 
                                    typeof jsonData.do_conc !== 'undefined' ||
                                    typeof jsonData.temp !== 'undefined' ||
@@ -367,7 +371,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   const connectToDevice = async (device: BleDevice) => {
     if (!bleClientRef.current || !isMountedRef.current) return;
 
-    // Evitar múltiples intentos de conexión simultáneos
     if (isConnecting || connectedDeviceRef.current) {
         const reason = isConnecting ? "conexión ya en progreso" : "ya hay un dispositivo conectado";
         console.warn(`Intento de conexión ignorado: ${reason}.`);
@@ -566,7 +569,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
               const chunkBuffer = encodedData.slice(i, i + CHUNK_SIZE);
               console.log(`📦 Enviando chunk #${i / CHUNK_SIZE + 1} (${chunkBuffer.byteLength} bytes)`);
 
-              // El cliente nativo de Capacitor espera un DataView. La web espera un ArrayBuffer.
               const dataToWrite = isNativePlatform.current ? new DataView(chunkBuffer.buffer) : chunkBuffer.buffer;
               
               await bleClientRef.current.write(
@@ -576,7 +578,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
                   dataToWrite
               );
 
-              // Añadir un pequeño retraso entre chunks para ayudar al receptor
               await new Promise(resolve => setTimeout(resolve, CHUNK_DELAY_MS));
           }
           console.log("✅ Comando enviado completamente.");
@@ -603,6 +604,8 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   React.useImperativeHandle(ref, () => ({
       handleDisconnect,
       sendWifiConfig,
+      getIsConnecting: () => isConnecting || isScanning,
+      handleConnect,
   }));
 
   const handleScanModalClose = async () => {
@@ -612,41 +615,8 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     setIsScanModalOpen(false);
   };
 
-  const [container, setContainer] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    setContainer(document.getElementById('ble-actions-container'));
-  }, []);
-
   return (
     <>
-      {container && !connectedDeviceRef.current && createPortal(
-        <>
-          <div className="flex items-center justify-center space-x-2 text-muted-foreground">
-            <Bluetooth className="w-5 h-5" />
-            <span>Conéctese a su dispositivo BLE</span>
-          </div>
-          <Button 
-            onClick={handleConnect} 
-            disabled={isConnecting || !isBleInitialized || isScanning} 
-            className="w-full h-12 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105"
-          >
-            {(isConnecting || isScanning) ? (
-              <>
-                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-                {isScanning ? 'Buscando...' : 'Conectando...'}
-              </>
-            ) : (
-              <>
-                <Search className="w-5 h-5 mr-2" />
-                Buscar Dispositivo
-              </>
-            )}
-          </Button>
-        </>,
-        container
-      )}
-
       <Dialog open={isScanModalOpen} onOpenChange={handleScanModalClose}>
         <DialogContent>
           <DialogHeader>
@@ -700,7 +670,6 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
 });
 BleConnector.displayName = "BleConnector";
 
-// Adaptador para Web Bluetooth API
 function createWebBluetoothAdapter(): BleClient {
   let webDevice: BluetoothDevice | null = null;
   let onDisconnectCallback: (() => void) | null = null;

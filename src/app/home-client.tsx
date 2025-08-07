@@ -25,7 +25,9 @@ import {
   MoreVertical,
   Cloud,
   CloudOff,
-  WifiOff
+  WifiOff,
+  Search,
+  RefreshCw
 } from 'lucide-react';
 import type { SensorData, BleConnectorRef } from './ble-connector';
 import { initialSensorData, BleConnector } from './ble-connector';
@@ -275,7 +277,6 @@ export default function HomeClient() {
     if (mode === 'ble' && bleConnectorRef.current) {
       bleConnectorRef.current.handleDisconnect();
     }
-    // Si estamos en modo MQTT, el hook useMqtt se encargará de la desconexión al cambiar el estado `enabled`
     setMode('disconnected');
     setBleSensorData(initialSensorData);
     setIsBleConnected(false);
@@ -296,6 +297,12 @@ export default function HomeClient() {
       setMode('ble');
     }
   }
+
+  const handleBleConnectClick = () => {
+    bleConnectorRef.current?.handleConnect();
+  };
+
+  const isBleConnecting = bleConnectorRef.current?.getIsConnecting() || false;
 
   return (
     <>
@@ -328,13 +335,31 @@ export default function HomeClient() {
               <CardTitle className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">AQUADATA 2.0</CardTitle>
               <CardDescription className="text-muted-foreground mt-2 leading-relaxed">Sistema Avanzado de Monitoreo de Calidad del Agua</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-                <div id="ble-actions-container" className="text-center space-y-4"></div>
+            <CardContent className="space-y-4">
+                <div className="text-center space-y-4">
+                  <Button 
+                    onClick={handleBleConnectClick} 
+                    disabled={isBleConnecting}
+                    className="w-full h-12 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105"
+                  >
+                    {isBleConnecting ? (
+                      <>
+                        <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                        Buscando...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-5 h-5 mr-2" />
+                        Buscar Dispositivo (BLE)
+                      </>
+                    )}
+                  </Button>
+                </div>
                  <Button onClick={() => setIsMqttModalOpen(true)} className="w-full bg-green-600 hover:bg-green-700">
                     <Cloud className="mr-2 h-4 w-4" />
                     Conectar Online (MQTT)
                   </Button>
-                <div className="border-t pt-4">
+                <div className="border-t pt-4 mt-2">
                     <div className="flex items-center justify-center space-x-4 text-sm text-muted-foreground">
                         <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-green-500 rounded-full"></div><span>Tiempo Real</span></div>
                         <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-blue-500 rounded-full"></div><span>Múltiples Sensores</span></div>
