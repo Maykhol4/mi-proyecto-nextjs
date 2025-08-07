@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -61,6 +62,7 @@ export interface SensorData {
   type?: string;
   message?: string;
   wifi_status?: 'connected' | 'disconnected' | 'connecting';
+  iso_timestamp?: string;
 }
 
 export const initialSensorData: SensorData = {
@@ -784,3 +786,5 @@ function createWebBluetoothAdapter(): BleClient {
     }
   };
 }
+
+    

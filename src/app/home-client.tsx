@@ -27,7 +27,9 @@ import {
   CloudOff,
   WifiOff,
   Search,
-  RefreshCw
+  RefreshCw,
+  Download,
+  Trash2
 } from 'lucide-react';
 import type { SensorData, BleConnectorRef } from './ble-connector';
 import { initialSensorData, BleConnector } from './ble-connector';
@@ -216,6 +218,7 @@ export default function HomeClient() {
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
   const [isMqttModalOpen, setIsMqttModalOpen] = useState(false);
   const [mode, setMode] = useState<'ble' | 'mqtt' | 'disconnected'>('disconnected');
+  const [historyData, setHistoryData] = useState<SensorData[]>([]);
   
   const { connectionStatus: mqttStatus, sensorData: mqttSensorData } = useMqtt(mode === 'mqtt');
 
@@ -224,6 +227,20 @@ export default function HomeClient() {
   const { toast } = useToast();
   
   const sensorData = mode === 'mqtt' ? (mqttSensorData || initialSensorData) : bleSensorData;
+  
+  // Store data history
+  React.useEffect(() => {
+    if (mode !== 'disconnected' && sensorData && sensorData.ph !== null) {
+      const now = new Date();
+      // Add a full ISO timestamp for better CSV compatibility
+      const dataPointWithTimestamp = {
+        ...sensorData,
+        iso_timestamp: now.toISOString() 
+      };
+      setHistoryData(prev => [...prev, dataPointWithTimestamp]);
+    }
+  }, [sensorData, mode]);
+
 
   const getSensorStatus = (
     value: number | null | undefined, criticalMin?: number, criticalMax?: number, warningMin?: number, warningMax?: number
@@ -303,6 +320,66 @@ export default function HomeClient() {
   };
 
   const isBleConnecting = bleConnectorRef.current?.getIsConnecting() || false;
+  
+  const handleExportCsv = () => {
+    if (historyData.length === 0) {
+      toast({
+        title: "No hay datos",
+        description: "No hay datos históricos para exportar.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const headers = ['iso_timestamp', 'timestamp', 'ph', 'do_conc', 'do_sat', 'temp', 'status'];
+    const csvRows = [
+      headers.join(',')
+    ];
+
+    historyData.forEach(row => {
+      const values = headers.map(header => {
+        const value = (row as any)[header];
+        if (typeof value === 'string' && value.includes(',')) {
+          return `"${value}"`; // Quote strings with commas
+        }
+        return value;
+      });
+      csvRows.push(values.join(','));
+    });
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    const link = document.createElement("a");
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}`;
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
+      link.setAttribute("href", url);
+      link.setAttribute("download", `aquadata_export_${dateStr}_${timeStr}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+    
+    toast({
+        title: "Exportación Exitosa",
+        description: `${historyData.length} registros exportados a CSV.`,
+    });
+  };
+
+  const handleClearHistory = () => {
+    if (historyData.length > 0) {
+      setHistoryData([]);
+      toast({
+        title: "Historial Limpio",
+        description: "Se han borrado los datos almacenados en esta sesión.",
+      });
+    }
+  };
+
 
   return (
     <>
@@ -444,8 +521,25 @@ export default function HomeClient() {
                 <SensorCard icon={<Thermometer className="w-5 h-5 text-orange-600" />} title="Temperatura" value={sensorData.temp} unit="°C" description="18-28°C óptimo" status={tempStatus} />
             </div>
 
-            <Card>
-              <CardHeader><CardTitle className="flex items-center space-x-2"><TrendingUp className="w-5 h-5" /><span>Estadísticas del Dispositivo</span></CardTitle></CardHeader>
+            <Card className="mb-8">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <TrendingUp className="w-5 h-5" />
+                    <span>Estadísticas del Dispositivo</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button onClick={handleExportCsv} variant="outline" size="sm" disabled={historyData.length === 0}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Exportar CSV ({historyData.length})
+                    </Button>
+                     <Button onClick={handleClearHistory} variant="destructive" size="sm" disabled={historyData.length === 0}>
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Limpiar Historial
+                    </Button>
+                  </div>
+                </CardTitle>
+              </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div className="text-center p-4 bg-blue-50 rounded-lg"><div className="text-2xl font-bold text-blue-600">{sensorData.readings_count?.ph ?? 0}</div><div className="text-sm text-muted-foreground mt-1">Lecturas pH exitosas</div></div>
@@ -461,3 +555,5 @@ export default function HomeClient() {
     </>
   );
 }
+
+    
