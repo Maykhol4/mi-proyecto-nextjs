@@ -312,6 +312,8 @@ export default function HomeClient() {
     setIsBleConnected(connected);
     if(connected) {
       setMode('ble');
+    } else {
+      setMode('disconnected');
     }
   }
 
@@ -342,7 +344,7 @@ export default function HomeClient() {
         if (typeof value === 'string' && value.includes(',')) {
           return `"${value}"`; // Quote strings with commas
         }
-        return value;
+        return value ?? ''; // Return empty string for null/undefined
       });
       csvRows.push(values.join(','));
     });
@@ -351,18 +353,19 @@ export default function HomeClient() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     
     const link = document.createElement("a");
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob);
-      const now = new Date();
-      const dateStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}`;
-      const timeStr = `${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
-      link.setAttribute("href", url);
-      link.setAttribute("download", `aquadata_export_${dateStr}_${timeStr}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
+    const url = URL.createObjectURL(blob);
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}`;
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
+    
+    link.setAttribute("href", url);
+    link.setAttribute("download", `aquadata_export_${dateStr}_${timeStr}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     
     toast({
         title: "Exportación Exitosa",
@@ -555,5 +558,3 @@ export default function HomeClient() {
     </>
   );
 }
-
-    
