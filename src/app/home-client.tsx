@@ -220,6 +220,7 @@ export default function HomeClient() {
   const [isMqttModalOpen, setIsMqttModalOpen] = useState(false);
   const [mode, setMode] = useState<'ble' | 'mqtt' | 'disconnected'>('disconnected');
   const [historyData, setHistoryData] = useState<SensorData[]>([]);
+  const [lastUpdateTime, setLastUpdateTime] = useState<string>('--:--:--');
   
   const { connectionStatus: mqttStatus, sensorData: mqttSensorData } = useMqtt(mode === 'mqtt');
 
@@ -240,6 +241,10 @@ export default function HomeClient() {
         iso_timestamp: now.toISOString() 
       };
       setHistoryData(prev => [...prev, dataPointWithTimestamp]);
+      
+      const timeString = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setLastUpdateTime(timeString);
+
 
       // Save to Firestore
       saveSensorDataToFirestore(dataPointWithTimestamp).catch(error => {
@@ -309,6 +314,7 @@ export default function HomeClient() {
     setMode('disconnected');
     setBleSensorData(initialSensorData);
     setIsBleConnected(false);
+    setLastUpdateTime('--:--:--');
   };
   
   const handleSaveWifi = (ssid: string, psk: string) => {
@@ -326,6 +332,7 @@ export default function HomeClient() {
       setMode('ble');
     } else {
       setMode('disconnected');
+      setLastUpdateTime('--:--:--');
     }
   }
 
@@ -517,7 +524,7 @@ export default function HomeClient() {
               <CardContent className="p-6">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div className="flex items-center space-x-2"><CheckCircle className="w-5 h-5 text-green-500" /><span className="font-semibold">Estado:</span><span className="text-green-600">{sensorData.status || 'N/A'}</span></div>
-                  <div className="flex items-center space-x-2"><Activity className="w-5 h-5 text-primary" /><span className="font-semibold">Última lectura:</span><span className="text-primary">{sensorData.timestamp}</span></div>
+                  <div className="flex items-center space-x-2"><Activity className="w-5 h-5 text-primary" /><span className="font-semibold">Última lectura:</span><span className="text-primary">{lastUpdateTime}</span></div>
                   {wifiStatus && (
                     <div className={`flex items-center space-x-2 ${wifiStatus.color}`}>
                       <Wifi className="w-5 h-5" />
