@@ -46,7 +46,6 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useToast } from '@/hooks/use-toast';
 import { useMqtt } from '@/hooks/use-mqtt';
-import { saveSensorDataToFirestore } from '@/lib/firebase';
 
 
 // --- Reusable Components ---
@@ -230,12 +229,10 @@ export default function HomeClient() {
   
   const sensorData = mode === 'mqtt' ? (mqttSensorData || initialSensorData) : bleSensorData;
   
-  // Store data history and save to cloud
+  // Store data history
   useEffect(() => {
-    // Save a record if we are in a connected mode and the incoming data has a timestamp
     if (mode !== 'disconnected' && sensorData && sensorData.timestamp && sensorData.timestamp !== initialSensorData.timestamp) {
       const now = new Date();
-      // Add a full ISO timestamp for better CSV compatibility
       const dataPointWithTimestamp = {
         ...sensorData,
         iso_timestamp: now.toISOString() 
@@ -244,19 +241,8 @@ export default function HomeClient() {
       
       const timeString = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setLastUpdateTime(timeString);
-
-
-      // Save to Firestore
-      saveSensorDataToFirestore(dataPointWithTimestamp).catch(error => {
-        console.error("Error saving to Firestore:", error);
-        toast({
-            variant: "destructive",
-            title: "Error en la nube",
-            description: "No se pudo guardar el dato en Firestore."
-        });
-      });
     }
-  }, [sensorData, mode, toast]);
+  }, [sensorData, mode]);
 
 
   const getSensorStatus = (
