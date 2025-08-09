@@ -19,8 +19,8 @@ sensor_data = {
     "do_conc": None,
     "do_sat": None,
     "temp": None,
-    "timestamp": "",
-    "status": "🟢 All systems normal",
+    "timestamp": "--:--:--",
+    "status": "⚪ Sensor reading error",
     "readings_count": {"ph": 0, "do": 0},
     "errors_count": {"ph": 0, "do": 0},
     "wifi_status": "disconnected"
@@ -229,9 +229,6 @@ def main_loop():
     readings = {"ph": 0, "do": 0}
     errors = {"ph": 0, "do": 0}
     
-    print("🔬 AQUADATA 2.0 - Real Data Mode")
-    print("=" * 60)
-    
     while True:
         try:
             wifi_status_detailed = get_wifi_status()
@@ -278,27 +275,4 @@ def main_loop():
             time.sleep(5)
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("    🌊 AQUADATA 2.0 - Real Data Mode 🌊")
-    print("=" * 60)
-    
-    try:
-        main_loop()
-    except KeyboardInterrupt:
-        print(f"\n🛑 AQUADATA 2.0 STOPPED")
-    except Exception as e:
-        print(f"\n❌ Critical error: {e}")
-    finally:
-        try:
-            wifi_manager.disconnect()
-            if mqtt_client:
-                mqtt_client.disconnect()
-            if uart:
-                uart.close()
-            ble.active(False)
-            print("🔵 BLE, WiFi, and MQTT deactivated")
-        except:
-            pass
-        print("=" * 60)
-        print("Thanks for using AQUADATA 2.0! 👋🌊")
-        print("=" * 60)
+    main_loop()
