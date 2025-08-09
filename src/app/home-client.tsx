@@ -491,11 +491,13 @@ export default function HomeClient() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        <DropdownMenuItem onSelect={() => setIsWifiModalOpen(true)} disabled={mode !== 'ble' || !isBleConnected}>
-                          <Settings className="mr-2 h-4 w-4" />
-                          <span>Ajustes WiFi</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
+                        {mode === 'ble' && (
+                          <DropdownMenuItem onSelect={() => setIsWifiModalOpen(true)} disabled={!isBleConnected}>
+                            <Settings className="mr-2 h-4 w-4" />
+                            <span>Ajustes WiFi</span>
+                          </DropdownMenuItem>
+                        )}
+                        {mode === 'ble' && <DropdownMenuSeparator />}
                         <DropdownMenuItem onSelect={handleDisconnect}>
                           {mode === 'mqtt' ? <CloudOff className="mr-2 h-4 w-4" /> : <BluetoothOff className="mr-2 h-4 w-4" />}
                           <span>{mode === 'mqtt' ? 'Desconectar MQTT' : 'Desconectar'}</span>
@@ -504,10 +506,12 @@ export default function HomeClient() {
                     </DropdownMenu>
                   ) : (
                     <>
-                      <Button onClick={() => setIsWifiModalOpen(true)} variant="outline" size="sm" disabled={mode !== 'ble' || !isBleConnected}>
-                          <Settings className="mr-2 h-4 w-4" />
-                          Ajustes WiFi
-                      </Button>
+                      {mode === 'ble' && (
+                        <Button onClick={() => setIsWifiModalOpen(true)} variant="outline" size="sm" disabled={!isBleConnected}>
+                            <Settings className="mr-2 h-4 w-4" />
+                            Ajustes WiFi
+                        </Button>
+                      )}
                       <Button onClick={handleDisconnect} variant="destructive" size="sm">
                         {mode === 'mqtt' ? <CloudOff className="mr-2 h-4 w-4" /> : <BluetoothOff className="mr-2 h-4 w-4" />}
                         {mode === 'mqtt' ? 'Desconectar MQTT' : 'Desconectar'}
