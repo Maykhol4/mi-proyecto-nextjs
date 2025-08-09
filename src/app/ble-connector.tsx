@@ -58,7 +58,6 @@ export interface SensorData {
   status: string;
   readings_count?: { ph: number; do: number };
   errors_count?: { ph: number; do: number };
-  simulation_cycle: number;
   type?: string;
   message?: string;
   wifi_status?: 'connected' | 'disconnected' | 'connecting';
@@ -74,7 +73,6 @@ export const initialSensorData: SensorData = {
   status: '⚪',
   readings_count: { ph: 0, do: 0 },
   errors_count: { ph: 0, do: 0 },
-  simulation_cycle: 0,
   wifi_status: 'disconnected',
 };
 

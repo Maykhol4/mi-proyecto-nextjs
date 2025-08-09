@@ -37,7 +37,6 @@ export function useMqtt(enabled: boolean) {
           status: data.status,
           readings_count: data.readings_count,
           errors_count: data.errors_count,
-          simulation_cycle: data.simulation_cycle,
           wifi_status: data.wifi_status
         };
       }

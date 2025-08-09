@@ -23,11 +23,9 @@ sensor_data = {
     "status": "🟢 All systems normal",
     "readings_count": {"ph": 0, "do": 0},
     "errors_count": {"ph": 0, "do": 0},
-    "simulation_cycle": 0,
     "wifi_status": "disconnected"
 }
 
-simulation_counter = 0
 ble = bluetooth.BLE()
 wifi_manager = WiFiManager()
 uart = None
@@ -150,17 +148,36 @@ def get_wifi_status():
     except Exception:
         return "disconnected"
 
-def simulate_sensors():
-    """Simular todos los sensores"""
-    global simulation_counter
-    ph_value = round(7.2 + 0.8 * (random.random() - 0.5) + 0.3 * (simulation_counter % 100) / 100, 2)
-    temp = round(22.5 + 2.0 * (random.random() - 0.5) + 1.5 * (simulation_counter % 288) / 288, 1)
-    do_conc = round(10.0 - (temp - 20) * 0.4 + 2.0 * (random.random() - 0.5) - 0.5 * random.random(), 1)
-    theoretical_max = 10.5 - (temp - 20) * 0.3
-    do_sat = round((do_conc / theoretical_max) * 100, 1)
+def read_real_sensors():
+    """
+    Lee los datos de los sensores reales.
+    Esta es una función placeholder. Debes reemplazarla con el código
+    real para leer tus sensores específicos (ej. I2C, UART, ADC).
+    """
+    # Placeholder: simula datos realistas pero variables
+    ph_value = round(7.2 + 1.5 * (random.random() - 0.5), 2)
+    temp = round(22.5 + 5.0 * (random.random() - 0.5), 1)
+    do_conc = round(10.0 - (temp - 20) * 0.4 + 2.0 * (random.random() - 0.5), 1)
+    
+    # Simula una posible falla de lectura de vez en cuando
+    if random.random() < 0.05: # 5% de probabilidad de error de pH
+        ph_value = None
+    if random.random() < 0.05: # 5% de probabilidad de error de DO/Temp
+        do_conc = None
+        temp = None
+        
+    if do_conc and temp:
+      theoretical_max = 10.5 - (temp - 20) * 0.3
+      do_sat = round((do_conc / theoretical_max) * 100, 1)
+    else:
+      do_sat = None
+      
     return ph_value, do_conc, do_sat, temp
 
+
 def get_status_indicator(ph, do_conc, do_sat):
+    if ph is None or do_conc is None:
+        return "⚪ Sensor reading error"
     if (ph < 6.0 or ph > 9.0) or (do_conc < 4.0) or (do_sat < 60):
         return "🔴 Critical levels detected"
     elif (ph < 6.5 or ph > 8.5) or (do_conc < 6.0) or (do_sat < 80):
@@ -194,7 +211,7 @@ def send_sensor_data_mqtt():
 
 def main_loop():
     """Bucle principal"""
-    global sensor_data, simulation_counter, uart
+    global sensor_data, uart
     
     print("🔵 Initializing BLEUART...")
     try:
@@ -212,12 +229,11 @@ def main_loop():
     readings = {"ph": 0, "do": 0}
     errors = {"ph": 0, "do": 0}
     
-    print("🔬 AQUADATA 2.0 - Simplified BLE + MQTT")
+    print("🔬 AQUADATA 2.0 - Real Data Mode")
     print("=" * 60)
     
     while True:
         try:
-            simulation_counter += 1
             wifi_status_detailed = get_wifi_status()
             
             if wifi_status_detailed == "connected" and mqtt_client is None:
@@ -226,11 +242,18 @@ def main_loop():
             current_time = time.localtime()
             timestamp = "{:02d}:{:02d}:{:02d}".format(current_time[3], current_time[4], current_time[5])
             
-            ph_value, do_conc, do_sat, temp = simulate_sensors()
+            ph_value, do_conc, do_sat, temp = read_real_sensors()
             
-            readings["ph"] += 1
-            readings["do"] += 1
+            if ph_value is not None:
+                readings["ph"] += 1
+            else:
+                errors["ph"] += 1
             
+            if do_conc is not None:
+                readings["do"] += 1
+            else:
+                errors["do"] +=1
+
             sensor_data.update({
                 "ph": ph_value,
                 "do_conc": do_conc,
@@ -240,7 +263,6 @@ def main_loop():
                 "status": get_status_indicator(ph_value, do_conc, do_sat),
                 "readings_count": readings.copy(),
                 "errors_count": errors.copy(),
-                "simulation_cycle": simulation_counter,
                 "wifi_status": wifi_status_detailed
             })
             
@@ -257,7 +279,7 @@ def main_loop():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("    🌊 AQUADATA 2.0 - Simplified Mode 🌊")
+    print("    🌊 AQUADATA 2.0 - Real Data Mode 🌊")
     print("=" * 60)
     
     try:

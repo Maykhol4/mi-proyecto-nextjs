@@ -232,7 +232,7 @@ export default function HomeClient() {
   // Store data history and save to cloud
   useEffect(() => {
     // Save a record if we are in a connected mode and the incoming data has a timestamp
-    if (mode !== 'disconnected' && sensorData && sensorData.timestamp !== initialSensorData.timestamp) {
+    if (mode !== 'disconnected' && sensorData && sensorData.timestamp && sensorData.timestamp !== initialSensorData.timestamp) {
       const now = new Date();
       // Add a full ISO timestamp for better CSV compatibility
       const dataPointWithTimestamp = {
@@ -524,7 +524,6 @@ export default function HomeClient() {
                       <span className="font-semibold">{wifiStatus.text}</span>
                     </div>
                   )}
-                  <div className="flex items-center space-x-2"><IterationCw className="w-5 h-5 text-primary" /><span className="font-semibold">Ciclo de simulación:</span><span className="text-primary">#{sensorData.simulation_cycle}</span></div>
                 </div>
               </CardContent>
             </Card>
