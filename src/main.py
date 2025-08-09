@@ -209,6 +209,14 @@ def send_sensor_data_mqtt():
             connect_mqtt()
     return False
 
+def format_uptime(uptime_ms):
+    """Formatea milisegundos a HH:MM:SS"""
+    uptime_s = uptime_ms // 1000
+    seconds = uptime_s % 60
+    minutes = (uptime_s // 60) % 60
+    hours = (uptime_s // 3600)
+    return "{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds)
+
 def main_loop():
     """Bucle principal"""
     global sensor_data, uart
@@ -228,6 +236,7 @@ def main_loop():
     
     readings = {"ph": 0, "do": 0}
     errors = {"ph": 0, "do": 0}
+    start_time = time.ticks_ms()
     
     while True:
         try:
@@ -236,8 +245,9 @@ def main_loop():
             if wifi_status_detailed == "connected" and mqtt_client is None:
                 connect_mqtt()
 
-            current_time = time.localtime()
-            timestamp = "{:02d}:{:02d}:{:02d}".format(current_time[3], current_time[4], current_time[5])
+            # Usar tiempo de actividad en lugar de hora local
+            uptime = time.ticks_diff(time.ticks_ms(), start_time)
+            timestamp = format_uptime(uptime)
             
             ph_value, do_conc, do_sat, temp = read_real_sensors()
             
@@ -276,3 +286,5 @@ def main_loop():
 
 if __name__ == "__main__":
     main_loop()
+
+    
