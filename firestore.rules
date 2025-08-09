@@ -1,0 +1,13 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read/write access to the sensor_readings collection
+    // for any authenticated user. For production, you'd want to
+    // tighten these rules, e.g., match /users/{userId}/readings/{readingId}
+    match /sensor_readings/{readingId} {
+      allow read, write: if true; 
+    }
+  }
+}

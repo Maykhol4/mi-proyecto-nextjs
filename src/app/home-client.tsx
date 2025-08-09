@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, type FC, useRef } from 'react';
+import React, { useState, type FC, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -46,6 +46,7 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useToast } from '@/hooks/use-toast';
 import { useMqtt } from '@/hooks/use-mqtt';
+import { saveSensorDataToFirestore } from '@/lib/firebase';
 
 
 // --- Reusable Components ---
@@ -228,10 +229,10 @@ export default function HomeClient() {
   
   const sensorData = mode === 'mqtt' ? (mqttSensorData || initialSensorData) : bleSensorData;
   
-  // Store data history
-  React.useEffect(() => {
+  // Store data history and save to cloud
+  useEffect(() => {
     // Save a record if we are in a connected mode and the incoming data has a timestamp
-    if (mode !== 'disconnected' && sensorData && sensorData.timestamp && sensorData.timestamp !== initialSensorData.timestamp) {
+    if (mode !== 'disconnected' && sensorData && sensorData.timestamp !== initialSensorData.timestamp) {
       const now = new Date();
       // Add a full ISO timestamp for better CSV compatibility
       const dataPointWithTimestamp = {
@@ -239,8 +240,18 @@ export default function HomeClient() {
         iso_timestamp: now.toISOString() 
       };
       setHistoryData(prev => [...prev, dataPointWithTimestamp]);
+
+      // Save to Firestore
+      saveSensorDataToFirestore(dataPointWithTimestamp).catch(error => {
+        console.error("Error saving to Firestore:", error);
+        toast({
+            variant: "destructive",
+            title: "Error en la nube",
+            description: "No se pudo guardar el dato en Firestore."
+        });
+      });
     }
-  }, [sensorData, mode]);
+  }, [sensorData, mode, toast]);
 
 
   const getSensorStatus = (
