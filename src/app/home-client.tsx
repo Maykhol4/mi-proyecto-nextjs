@@ -30,7 +30,9 @@ import {
   RefreshCw,
   Download,
   Trash2,
-  PowerOff
+  PowerOff,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import type { SensorData, BleConnectorRef } from './ble-connector';
 import { initialSensorData, BleConnector } from './ble-connector';
@@ -145,6 +147,7 @@ const WifiConfigModal: FC<{
 }> = ({isOpen, onClose, onSave}) => {
     const [ssid, setSsid] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
 
     const handleSave = (e: React.MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
@@ -159,8 +162,11 @@ const WifiConfigModal: FC<{
     const handleClose = () => {
         setSsid('');
         setPassword('');
+        setShowPassword(false);
         onClose();
     }
+    
+    const toggleShowPassword = () => setShowPassword(prev => !prev);
 
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -187,13 +193,26 @@ const WifiConfigModal: FC<{
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="password">Contraseña</Label>
-                        <Input 
-                            id="password" 
-                            type="password" 
-                            value={password} 
-                            onChange={(e) => setPassword(e.target.value)} 
-                            placeholder="Introduce la contraseña" 
-                        />
+                        <div className="relative">
+                            <Input 
+                                id="password" 
+                                type={showPassword ? 'text' : 'password'}
+                                value={password} 
+                                onChange={(e) => setPassword(e.target.value)} 
+                                placeholder="Introduce la contraseña"
+                                className="pr-10"
+                            />
+                            <Button 
+                                type="button"
+                                variant="ghost" 
+                                size="icon"
+                                className="absolute inset-y-0 right-0 h-full px-3"
+                                onClick={toggleShowPassword}
+                            >
+                                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                <span className="sr-only">{showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}</span>
+                            </Button>
+                        </div>
                     </div>
                 </div>
 
