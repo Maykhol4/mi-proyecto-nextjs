@@ -451,12 +451,13 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       });
       return;
     }
-
-    if (connectedDeviceRef.current) {
-      console.warn("Ya hay un dispositivo conectado, no se inicia nueva conexión.");
+  
+    if (connectedDeviceRef.current || isConnecting || isScanning) {
+      console.warn("Ya hay un dispositivo conectado o una operación en curso.");
       return;
     }
-
+  
+    // --- Web Bluetooth Path (requestDevice) ---
     if (!bleClientRef.current.requestLEScan) {
       setIsConnecting(true);
       try {
@@ -468,8 +469,8 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       } catch (error) {
         console.error("Error solicitando dispositivo:", error);
         if (isMountedRef.current) {
-          const errorMessage = (error as Error).message;
-          if (errorMessage.includes('User cancelled')) {
+          const errorMessage = (error as Error).message.toLowerCase();
+          if (errorMessage.includes('user cancelled') || errorMessage.includes('user gesture')) {
             toast({ 
               title: 'Selección Cancelada', 
               description: 'No se seleccionó ningún dispositivo.' 
@@ -478,22 +479,23 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
             toast({ 
               variant: 'destructive', 
               title: 'Error de Solicitud', 
-              description: errorMessage 
+              description: (error as Error).message 
             });
           }
         }
       } finally {
         if (isMountedRef.current) {
-          setIsConnecting(false);
+          setIsConnecting(false); // Always reset connecting state
         }
       }
       return;
     }
-
+  
+    // --- Native Path (requestLEScan) ---
     setIsScanning(true);
     setIsScanModalOpen(true);
     setScanResults([]);
-
+  
     const onDeviceFound = (result: ScanResult) => {
       if (!isMountedRef.current) return;
       
@@ -510,25 +512,21 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
         return prev;
       });
     };
-
+  
     try {
       await bleClientRef.current.requestLEScan({ services: [] }, onDeviceFound);
       console.log('🔍 Iniciando escaneo BLE...');
-
+  
       scanTimeoutRef.current = setTimeout(async () => {
-        if (bleClientRef.current?.stopLEScan) {
-          await bleClientRef.current.stopLEScan();
-          setIsScanning(false);
-          console.log(`🔍 Escaneo finalizado.`);
-           if (isMountedRef.current && scanResults.length === 0) {
-            toast({ 
-              title: "Búsqueda finalizada", 
-              description: "No se encontraron dispositivos. Verifica que el dispositivo esté encendido."
-            });
-          }
+        await stopScanning(); // stopScanning now sets isScanning to false
+         if (isMountedRef.current && scanResults.length === 0) {
+          toast({ 
+            title: "Búsqueda finalizada", 
+            description: "No se encontraron dispositivos. Verifica que el dispositivo esté encendido."
+          });
         }
       }, SCAN_DURATION_MS);
-
+  
     } catch (error) {
       console.error("Error iniciando escaneo:", error);
       if (isMountedRef.current) {
@@ -609,7 +607,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   }));
 
   const handleScanModalClose = async () => {
-    if (isScanning && bleClientRef.current?.stopLEScan) {
+    if (isScanning) {
       await stopScanning();
     }
     setIsScanModalOpen(false);
