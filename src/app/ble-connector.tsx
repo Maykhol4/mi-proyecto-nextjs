@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -492,7 +491,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     };
   
     try {
-      await bleClientRef.current.requestLEScan({ services: [UART_SERVICE_UUID.substring(0, 8)], acceptAllDevices: true }, onDeviceFound);
+      await bleClientRef.current.requestLEScan({ services: [UART_SERVICE_UUID], acceptAllDevices: true }, onDeviceFound);
       console.log('🔍 Iniciando escaneo BLE...');
   
       scanTimeoutRef.current = setTimeout(async () => {
