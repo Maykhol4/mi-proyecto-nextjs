@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { RefreshCw, Search } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 // Interfaces
@@ -16,18 +16,21 @@ interface BleDevice {
 interface ScanResult {
   device: BleDevice;
   localName?: string;
+  // WebBluetooth specific
+  rssi?: number;
+  txPower?: number;
 }
 
 interface BleClient {
   initialize(options?: { androidNeverForLocation?: boolean }): Promise<void>;
-  requestDevice(options?: { 
+  requestDevice?(options?: { 
     services?: string[]; 
     name?: string; 
     namePrefix?: string; 
     acceptAllDevices?: boolean; 
     optionalServices?: string[] 
   }): Promise<BleDevice>;
-  connect(deviceId: string, onDisconnect?: () => void): Promise<void>;
+  connect(deviceId: string, onDisconnect?: () => void, targetDevice?: BluetoothDevice): Promise<void>;
   disconnect(deviceId: string): Promise<void>;
   startNotifications(
     deviceId: string,
@@ -41,8 +44,8 @@ interface BleClient {
     characteristic: string,
     value: string | DataView | ArrayBuffer,
   ): Promise<void>;
-  requestLEScan?(options: { services?: string[] }, onResult: (result: ScanResult) => void): Promise<void>;
-  stopLEScan?(): Promise<void>;
+  requestLEScan(options: { services?: string[], acceptAllDevices?: boolean }, onResult: (result: ScanResult) => void): Promise<void>;
+  stopLEScan(): Promise<void>;
   requestPermissions?(): Promise<void>;
   isEnabled?(): Promise<{ value: boolean }>;
   isGattServerDisconnected?(): boolean;
@@ -108,7 +111,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   const [isConnecting, setIsConnecting] = useState(false);
   const [isBleInitialized, setIsBleInitialized] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [scanResults, setScanResults] = useState<BleDevice[]>([]);
+  const [scanResults, setScanResults] = useState<Map<string, BleDevice>>(new Map());
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
   
   const bleClientRef = useRef<BleClient | null>(null);
@@ -119,6 +122,9 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   const connectionMonitorRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
   const isNativePlatform = useRef(false);
+
+  // Store web bluetooth devices to pass to connect method
+  const webBleDevicesRef = useRef<Map<string, BluetoothDevice>>(new Map());
 
   // Cleanup
   useEffect(() => {
@@ -194,7 +200,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
             throw new Error('Web Bluetooth no es compatible con este navegador.');
           }
           
-          bleClientRef.current = createWebBluetoothAdapter();
+          bleClientRef.current = createWebBluetoothAdapter(webBleDevicesRef);
           await bleClientRef.current.initialize();
           
           if (isMountedRef.current) {
@@ -397,7 +403,10 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
 
     try {
       console.log(`🔗 Intentando conectar a: ${device.name} (${device.deviceId})`);
-      await bleClientRef.current.connect(device.deviceId, isNativePlatform.current ? undefined : onDisconnected);
+      
+      const webDevice = webBleDevicesRef.current.get(device.deviceId);
+
+      await bleClientRef.current.connect(device.deviceId, onDisconnected, webDevice);
       connectedDeviceRef.current = device;
 
       try {
@@ -419,7 +428,9 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       
       if (isMountedRef.current) {
         setIsConnected(true);
-        startConnectionMonitor(); // Start monitor after successful connection
+        if (isNativePlatform.current) {
+          startConnectionMonitor(); // Start monitor for native platforms
+        }
         toast({ 
           title: '¡Conectado!', 
           description: `Conectado exitosamente a ${device.name || device.deviceId}.` 
@@ -456,70 +467,37 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       console.warn("Ya hay un dispositivo conectado o una operación en curso.");
       return;
     }
-  
-    // --- Web Bluetooth Path (requestDevice) ---
-    if (!bleClientRef.current.requestLEScan) {
-      setIsConnecting(true);
-      try {
-        const device = await bleClientRef.current.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: [UART_SERVICE_UUID],
-        });
-        await connectToDevice(device);
-      } catch (error) {
-        console.error("Error solicitando dispositivo:", error);
-        if (isMountedRef.current) {
-          const errorMessage = (error as Error).message.toLowerCase();
-          if (errorMessage.includes('user cancelled') || errorMessage.includes('user gesture')) {
-            toast({ 
-              title: 'Selección Cancelada', 
-              description: 'No se seleccionó ningún dispositivo.' 
-            });
-          } else {
-            toast({ 
-              variant: 'destructive', 
-              title: 'Error de Solicitud', 
-              description: (error as Error).message 
-            });
-          }
-        }
-      } finally {
-        if (isMountedRef.current) {
-          setIsConnecting(false); // Always reset connecting state
-        }
-      }
-      return;
-    }
-  
-    // --- Native Path (requestLEScan) ---
+    
+    // Unified flow using requestLEScan
     setIsScanning(true);
     setIsScanModalOpen(true);
-    setScanResults([]);
+    setScanResults(new Map());
+    webBleDevicesRef.current.clear();
   
     const onDeviceFound = (result: ScanResult) => {
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || !result.device?.deviceId) return;
       
       setScanResults(prev => {
-        const exists = prev.find(d => d.deviceId === result.device.deviceId);
-        if (!exists) {
-          const deviceName = result.device.name || result.localName || 'Dispositivo Desconocido';
-          console.log(`📱 Dispositivo encontrado: ${deviceName} (${result.device.deviceId})`);
-          return [...prev, { 
-            deviceId: result.device.deviceId, 
-            name: deviceName
-          }];
+        const newMap = new Map(prev);
+        if (!newMap.has(result.device.deviceId)) {
+           const deviceName = result.device.name || result.localName || 'Dispositivo Desconocido';
+           console.log(`📱 Dispositivo encontrado: ${deviceName} (${result.device.deviceId})`);
+           newMap.set(result.device.deviceId, {
+             deviceId: result.device.deviceId,
+             name: deviceName,
+           });
         }
-        return prev;
+        return newMap;
       });
     };
   
     try {
-      await bleClientRef.current.requestLEScan({ services: [] }, onDeviceFound);
+      await bleClientRef.current.requestLEScan({ services: [UART_SERVICE_UUID.substring(0, 8)], acceptAllDevices: true }, onDeviceFound);
       console.log('🔍 Iniciando escaneo BLE...');
   
       scanTimeoutRef.current = setTimeout(async () => {
         await stopScanning(); // stopScanning now sets isScanning to false
-         if (isMountedRef.current && scanResults.length === 0) {
+        if (isMountedRef.current && scanResults.size === 0) {
           toast({ 
             title: "Búsqueda finalizada", 
             description: "No se encontraron dispositivos. Verifica que el dispositivo esté encendido."
@@ -530,11 +508,19 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     } catch (error) {
       console.error("Error iniciando escaneo:", error);
       if (isMountedRef.current) {
-        toast({ 
-          variant: 'destructive', 
-          title: 'Error de Escaneo', 
-          description: `No se pudo iniciar la búsqueda: ${(error as Error).message}` 
-        });
+        const errorMessage = (error as Error).message.toLowerCase();
+        if (errorMessage.includes('user cancelled') || errorMessage.includes('user gesture')) {
+            toast({ 
+              title: 'Búsqueda Cancelada', 
+              description: 'El usuario no autorizó la búsqueda de dispositivos.' 
+            });
+        } else {
+            toast({ 
+              variant: 'destructive', 
+              title: 'Error de Escaneo', 
+              description: `No se pudo iniciar la búsqueda: ${(error as Error).message}` 
+            });
+        }
         setIsScanning(false);
         setIsScanModalOpen(false);
       }
@@ -612,6 +598,8 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     }
     setIsScanModalOpen(false);
   };
+  
+  const scanResultsArray = Array.from(scanResults.values());
 
   return (
     <>
@@ -628,8 +616,8 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
               </div>
             )}
             <div className="max-h-60 overflow-y-auto space-y-2">
-              {scanResults.length > 0 ? (
-                scanResults.map(device => (
+              {scanResultsArray.length > 0 ? (
+                scanResultsArray.map(device => (
                   <div key={device.deviceId} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
                     <div className="flex-1">
                       <div className="font-medium">
@@ -668,85 +656,111 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
 });
 BleConnector.displayName = "BleConnector";
 
-function createWebBluetoothAdapter(): BleClient {
-  let webDevice: BluetoothDevice | null = null;
+function createWebBluetoothAdapter(webBleDevicesRef: React.MutableRefObject<Map<string, BluetoothDevice>>): BleClient {
   let onDisconnectCallback: (() => void) | null = null;
   let txCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
   let rxCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
-
-  const handleGattServerDisconnected = () => {
+  let activeScan: BluetoothLEScan | null = null;
+  
+  const handleGattServerDisconnected = (event: Event) => {
+    const device = event.target as BluetoothDevice;
+    console.log(`GATT server disconnected for device: ${device.id}`);
+    webBleDevicesRef.current.delete(device.id);
     if (onDisconnectCallback) {
       onDisconnectCallback();
     }
     txCharacteristic = null;
     rxCharacteristic = null;
   };
-
+  
   return {
     initialize: () => Promise.resolve(),
-    
-    requestDevice: async (options) => {
+
+    requestLEScan: async (options, onResult) => {
       try {
-        const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: options?.acceptAllDevices || false,
-          optionalServices: options?.optionalServices || [],
+        const scan = await navigator.bluetooth.requestLEScan({
+          ...options,
+          keepRepeatedDevices: true,
+        });
+        activeScan = scan;
+        
+        navigator.bluetooth.addEventListener('advertisementreceived', (event) => {
+          if (!activeScan) return; // Ignore events if scan is stopped
+          const { device, rssi, txPower, uuids } = event;
+          
+          if (!webBleDevicesRef.current.has(device.id)) {
+             webBleDevicesRef.current.set(device.id, device);
+          }
+         
+          onResult({
+            device: { deviceId: device.id, name: device.name },
+            localName: device.name,
+            rssi,
+            txPower
+          });
         });
         
-        if (!device.id) {
-          throw new Error("El dispositivo seleccionado no tiene un ID válido.");
-        }
-        
-        webDevice = device;
-        return { 
-          deviceId: device.id, 
-          name: device.name || 'Dispositivo Desconocido' 
-        };
       } catch (error) {
-        if ((error as Error).name === 'NotFoundError') {
+        if ((error as Error).name === 'NotAllowedError') {
           throw new Error('User cancelled device selection');
         }
         throw error;
       }
     },
     
-    connect: async (deviceId, onDisconnect) => {
-      if (!webDevice || webDevice.id !== deviceId) {
-        throw new Error("Dispositivo no encontrado o ID no coincide.");
+    stopLEScan: () => {
+      if (activeScan) {
+        activeScan.stop();
+        activeScan = null;
+      }
+      return Promise.resolve();
+    },
+    
+    connect: async (deviceId, onDisconnect, targetDevice) => {
+      let deviceToConnect = targetDevice;
+      
+      if (!deviceToConnect) {
+        deviceToConnect = webBleDevicesRef.current.get(deviceId);
       }
       
-      if (!webDevice.gatt) {
-        throw new Error("GATT no disponible en este dispositivo.");
+      if (!deviceToConnect) {
+        throw new Error("Device not found. Must scan for it first.");
+      }
+      
+      if (!deviceToConnect.gatt) {
+        throw new Error("GATT not available on this device.");
       }
 
-      if (webDevice.gatt.connected) {
-        console.log("Ya conectado al servidor GATT.");
+      if (deviceToConnect.gatt.connected) {
+        console.log("Already connected to GATT server.");
         return;
       }
       
       onDisconnectCallback = onDisconnect || null;
-      webDevice.addEventListener('gattserverdisconnected', handleGattServerDisconnected);
+      deviceToConnect.addEventListener('gattserverdisconnected', handleGattServerDisconnected);
       
       try {
-        const server = await webDevice.gatt.connect();
+        const server = await deviceToConnect.gatt.connect();
         const service = await server.getPrimaryService(UART_SERVICE_UUID);
         txCharacteristic = await service.getCharacteristic(UART_TX_CHARACTERISTIC_UUID);
         rxCharacteristic = await service.getCharacteristic(UART_RX_CHARACTERISTIC_UUID);
       } catch (error) {
-        webDevice.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
-        throw new Error(`Error conectando y obteniendo servicios/características: ${(error as Error).message}`);
+        deviceToConnect.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
+        throw new Error(`Error connecting and getting services/characteristics: ${(error as Error).message}`);
       }
     },
     
     disconnect: async (deviceId) => {
-      if (!webDevice?.gatt?.connected || webDevice.id !== deviceId) return;
+      const device = webBleDevicesRef.current.get(deviceId);
+      if (!device?.gatt?.connected) return;
       
-      webDevice.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
-      webDevice.gatt.disconnect();
+      device.removeEventListener('gattserverdisconnected', handleGattServerDisconnected);
+      device.gatt.disconnect();
     },
     
     startNotifications: async (deviceId, serviceUUID, characteristicUUID, callback) => {
        if (!txCharacteristic) {
-        throw new Error("Característica TX no inicializada.");
+        throw new Error("TX characteristic not initialized.");
       }
       
       try {
@@ -759,30 +773,29 @@ function createWebBluetoothAdapter(): BleClient {
         
         await txCharacteristic.startNotifications();
       } catch (error) {
-        throw new Error(`Error iniciando notificaciones: ${(error as Error).message}`);
+        throw new Error(`Error starting notifications: ${(error as Error).message}`);
       }
     },
     
     write: async (deviceId, serviceUUID, characteristicUUID, value) => {
         if (!rxCharacteristic) {
-            throw new Error("Característica RX no inicializada.");
+            throw new Error("RX characteristic not initialized.");
         }
-        if (!webDevice?.gatt?.connected) {
+        const device = webBleDevicesRef.current.get(deviceId);
+        if (!device?.gatt?.connected) {
              throw new Error("GATT Server is disconnected. Cannot perform GATT operations. (Re)connect first with device.gatt.connect.");
         }
         try {
             const dataToWrite = typeof value === 'string' ? new TextEncoder().encode(value) : value;
             await rxCharacteristic.writeValue(dataToWrite);
         } catch(error) {
-            throw new Error(`Error escribiendo en característica: ${(error as Error).message}`);
+            throw new Error(`Error writing to characteristic: ${(error as Error).message}`);
         }
     },
     isGattServerDisconnected: () => {
-        return !webDevice?.gatt?.connected;
+        // This is a simplification. We'd need to track the specific connected device.
+        const firstDevice = webBleDevicesRef.current.values().next().value;
+        return !firstDevice?.gatt?.connected;
     }
   };
 }
-
-    
-    
-    
