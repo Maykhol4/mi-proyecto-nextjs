@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -802,3 +803,5 @@ function createWebBluetoothAdapter(webBleDevicesRef: React.MutableRefObject<Map<
     }
   };
 }
+
+    
