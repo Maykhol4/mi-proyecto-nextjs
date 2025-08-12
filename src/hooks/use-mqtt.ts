@@ -115,11 +115,19 @@ export function useMqtt(enabled: boolean) {
     client.on('error', (error) => {
       console.error('MQTT Client Error:', error);
       setConnectionStatus('Error');
-      toast({
-        title: "Error de Conexión MQTT",
-        description: error.message || "No se pudo conectar al broker.",
-        variant: "destructive",
-      });
+       if (error.message.toLowerCase().includes('connack timeout')) {
+            toast({
+                title: 'Timeout de Conexión MQTT',
+                description: 'La conexión con el servidor tardó demasiado. Revisa tu conexión a internet.',
+                variant: 'destructive',
+            });
+        } else {
+            toast({
+                title: 'Error de Conexión MQTT',
+                description: error.message || 'No se pudo conectar al broker.',
+                variant: 'destructive',
+            });
+        }
       client.end();
     });
 
