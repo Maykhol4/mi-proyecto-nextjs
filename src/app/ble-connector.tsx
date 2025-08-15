@@ -520,7 +520,8 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
     } else { // Web path with browser prompt
       try {
         const device = await bleClientRef.current.requestDevice({
-          services: [UART_SERVICE_UUID]
+          acceptAllDevices: true,
+          optionalServices: [UART_SERVICE_UUID]
         });
         if (device) {
           await connectToDevice(device);
@@ -689,7 +690,7 @@ function createWebBluetoothAdapter(webBleDevicesRef: React.MutableRefObject<Map<
     requestDevice: async (options) => {
        try {
             const device = await navigator.bluetooth.requestDevice({
-                filters: [{ services: options?.services }],
+                acceptAllDevices: options?.acceptAllDevices,
                 optionalServices: options?.optionalServices
             });
             webBleDevicesRef.current.set(device.id, device);
@@ -788,5 +789,7 @@ function createWebBluetoothAdapter(webBleDevicesRef: React.MutableRefObject<Map<
     }
   };
 }
+
+    
 
     
