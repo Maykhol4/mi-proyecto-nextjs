@@ -23,7 +23,7 @@ interface ScanResult {
 
 interface BleClient {
   initialize(options?: { androidNeverForLocation?: boolean }): Promise<void>;
-  requestDevice?(options?: { 
+  requestDevice(options?: { 
     services?: string[]; 
     name?: string; 
     namePrefix?: string; 
@@ -44,8 +44,8 @@ interface BleClient {
     characteristic: string,
     value: string | DataView | ArrayBuffer,
   ): Promise<void>;
-  requestLEScan(options: { services?: string[], acceptAllDevices?: boolean }, onResult: (result: ScanResult) => void): Promise<void>;
-  stopLEScan(): Promise<void>;
+  requestLEScan?(options: { services?: string[], acceptAllDevices?: boolean }, onResult: (result: ScanResult) => void): Promise<void>;
+  stopLEScan?(): Promise<void>;
   requestPermissions?(): Promise<void>;
   isEnabled?(): Promise<{ value: boolean }>;
   isGattServerDisconnected?(): boolean;
@@ -468,65 +468,72 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       return;
     }
     
-    // Unified flow using requestLEScan
-    setIsScanning(true);
-    setIsScanModalOpen(true);
-    setScanResults(new Map());
-    webBleDevicesRef.current.clear();
-  
-    const onDeviceFound = (result: ScanResult) => {
-      if (!isMountedRef.current || !result.device?.deviceId) return;
-      
-      setScanResults(prev => {
-        const newMap = new Map(prev);
-        if (!newMap.has(result.device.deviceId)) {
-           const deviceName = result.device.name || result.localName || 'Dispositivo Desconocido';
-           console.log(`📱 Dispositivo encontrado: ${deviceName} (${result.device.deviceId})`);
-           newMap.set(result.device.deviceId, {
-             deviceId: result.device.deviceId,
-             name: deviceName,
-           });
-        }
-        return newMap;
-      });
-    };
-  
-    try {
-      const scanOptions = isNativePlatform.current 
-        ? { acceptAllDevices: true }
-        : { services: [UART_SERVICE_UUID] };
+    // Native path with custom modal
+    if (isNativePlatform.current && bleClientRef.current.requestLEScan) {
+      setIsScanning(true);
+      setIsScanModalOpen(true);
+      setScanResults(new Map());
+    
+      const onDeviceFound = (result: ScanResult) => {
+        if (!isMountedRef.current || !result.device?.deviceId) return;
         
-      await bleClientRef.current.requestLEScan(scanOptions, onDeviceFound);
-      console.log('🔍 Iniciando escaneo BLE...');
-  
-      scanTimeoutRef.current = setTimeout(async () => {
-        await stopScanning(); // stopScanning now sets isScanning to false
-        if (isMountedRef.current && scanResults.size === 0) {
+        setScanResults(prev => {
+          const newMap = new Map(prev);
+          if (!newMap.has(result.device.deviceId)) {
+             const deviceName = result.device.name || result.localName || 'Dispositivo Desconocido';
+             console.log(`📱 Dispositivo encontrado: ${deviceName} (${result.device.deviceId})`);
+             newMap.set(result.device.deviceId, {
+               deviceId: result.device.deviceId,
+               name: deviceName,
+             });
+          }
+          return newMap;
+        });
+      };
+    
+      try {
+        await bleClientRef.current.requestLEScan({ acceptAllDevices: true }, onDeviceFound);
+        console.log('🔍 Iniciando escaneo BLE nativo...');
+    
+        scanTimeoutRef.current = setTimeout(async () => {
+          await stopScanning();
+          if (isMountedRef.current && scanResults.size === 0) {
+            toast({ 
+              title: "Búsqueda finalizada", 
+              description: "No se encontraron dispositivos. Verifica que el dispositivo esté encendido."
+            });
+          }
+        }, SCAN_DURATION_MS);
+    
+      } catch (error) {
+        console.error("Error iniciando escaneo nativo:", error);
+        if (isMountedRef.current) {
           toast({ 
-            title: "Búsqueda finalizada", 
-            description: "No se encontraron dispositivos. Verifica que el dispositivo esté encendido."
+            variant: 'destructive', 
+            title: 'Error de Escaneo', 
+            description: `No se pudo iniciar la búsqueda: ${(error as Error).message}` 
+          });
+          setIsScanning(false);
+          setIsScanModalOpen(false);
+        }
+      }
+    } else { // Web path with browser prompt
+      try {
+        const device = await bleClientRef.current.requestDevice({
+          services: [UART_SERVICE_UUID]
+        });
+        if (device) {
+          await connectToDevice(device);
+        }
+      } catch (error) {
+        const errorMessage = (error as Error).message.toLowerCase();
+        if (!errorMessage.includes('user cancelled')) {
+          toast({ 
+            variant: 'destructive', 
+            title: 'Error de Conexión Web', 
+            description: (error as Error).message 
           });
         }
-      }, SCAN_DURATION_MS);
-  
-    } catch (error) {
-      console.error("Error iniciando escaneo:", error);
-      if (isMountedRef.current) {
-        const errorMessage = (error as Error).message.toLowerCase();
-        if (errorMessage.includes('user cancelled') || errorMessage.includes('user gesture')) {
-            toast({ 
-              title: 'Búsqueda Cancelada', 
-              description: 'El usuario no autorizó la búsqueda de dispositivos.' 
-            });
-        } else {
-            toast({ 
-              variant: 'destructive', 
-              title: 'Error de Escaneo', 
-              description: `No se pudo iniciar la búsqueda: ${(error as Error).message}` 
-            });
-        }
-        setIsScanning(false);
-        setIsScanModalOpen(false);
       }
     }
   };
@@ -664,8 +671,7 @@ function createWebBluetoothAdapter(webBleDevicesRef: React.MutableRefObject<Map<
   let onDisconnectCallback: (() => void) | null = null;
   let txCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
   let rxCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
-  let activeScan: BluetoothLEScan | null = null;
-  
+
   const handleGattServerDisconnected = (event: Event) => {
     const device = event.target as BluetoothDevice;
     console.log(`GATT server disconnected for device: ${device.id}`);
@@ -680,44 +686,23 @@ function createWebBluetoothAdapter(webBleDevicesRef: React.MutableRefObject<Map<
   return {
     initialize: () => Promise.resolve(),
 
-    requestLEScan: async (options, onResult) => {
-      try {
-        const scan = await navigator.bluetooth.requestLEScan({
-          ...options,
-          keepRepeatedDevices: true,
-        });
-        activeScan = scan;
-        
-        navigator.bluetooth.addEventListener('advertisementreceived', (event) => {
-          if (!activeScan) return; // Ignore events if scan is stopped
-          const { device, rssi, txPower, uuids } = event;
-          
-          if (!webBleDevicesRef.current.has(device.id)) {
-             webBleDevicesRef.current.set(device.id, device);
-          }
-         
-          onResult({
-            device: { deviceId: device.id, name: device.name },
-            localName: device.name,
-            rssi,
-            txPower
-          });
-        });
-        
-      } catch (error) {
-        if ((error as Error).name === 'NotAllowedError') {
-          throw new Error('User cancelled device selection');
+    requestDevice: async (options) => {
+       try {
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{ services: options?.services }],
+                optionalServices: options?.optionalServices
+            });
+            webBleDevicesRef.current.set(device.id, device);
+            return {
+                deviceId: device.id,
+                name: device.name,
+            };
+        } catch (error) {
+            if ((error as Error).name === 'NotFoundError' || (error as Error).name === 'NotAllowedError') {
+                throw new Error('User cancelled device selection or no devices found.');
+            }
+            throw error;
         }
-        throw error;
-      }
-    },
-    
-    stopLEScan: () => {
-      if (activeScan) {
-        activeScan.stop();
-        activeScan = null;
-      }
-      return Promise.resolve();
     },
     
     connect: async (deviceId, onDisconnect, targetDevice) => {
