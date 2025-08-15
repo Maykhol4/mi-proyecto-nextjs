@@ -407,18 +407,26 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       const webDevice = webBleDevicesRef.current.get(device.deviceId);
 
       await bleClientRef.current.connect(device.deviceId, onDisconnected, webDevice);
+      console.log("✅ Conexión física establecida. Esperando para iniciar servicios...");
       connectedDeviceRef.current = device;
 
+      // **FIX:** Add a small delay on native platforms before starting notifications
+      if (isNativePlatform.current) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
       try {
+        console.log("⏳ Iniciando notificaciones BLE...");
         await bleClientRef.current.startNotifications(
           device.deviceId, 
           UART_SERVICE_UUID, 
           UART_TX_CHARACTERISTIC_UUID, 
           handleNotifications
         );
-        console.log('✅ Notificaciones BLE iniciadas');
+        console.log('✅ Notificaciones BLE iniciadas correctamente.');
       } catch (serviceError) {
-        throw new Error('El dispositivo no tiene el servicio UART Nordic requerido.');
+        console.error("❌ Error al iniciar notificaciones:", serviceError);
+        throw new Error('No se pudo iniciar la comunicación. El dispositivo no tiene el servicio UART requerido.');
       }
 
       if (connectionTimeoutRef.current) {
