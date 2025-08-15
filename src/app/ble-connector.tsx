@@ -492,7 +492,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
       };
     
       try {
-        await bleClientRef.current.requestLEScan({ acceptAllDevices: true }, onDeviceFound);
+        await bleClientRef.current.requestLEScan({ services: [], acceptAllDevices: true }, onDeviceFound);
         console.log('🔍 Iniciando escaneo BLE nativo...');
     
         scanTimeoutRef.current = setTimeout(async () => {
