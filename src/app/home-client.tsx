@@ -459,10 +459,6 @@ export default function HomeClient() {
                     )}
                   </Button>
                 </div>
-                 <Button onClick={() => setIsMqttModalOpen(true)} className="w-full bg-green-600 hover:bg-green-700">
-                    <Cloud className="mr-2 h-4 w-4" />
-                    Conectar Online (MQTT)
-                  </Button>
                 <div className="border-t pt-4 mt-2">
                     <div className="flex items-center justify-center space-x-4 text-sm text-muted-foreground">
                         <div className="flex items-center space-x-1"><div className="w-2 h-2 bg-green-500 rounded-full"></div><span>Tiempo Real</span></div>
