@@ -37,7 +37,7 @@ export interface BleConnectorRef {
 }
 
 interface BleConnectorProps {
-  onConnectionStateChange: (state: ConnectionState) => void;
+  onConnectionStateChanged: (state: ConnectionState) => void;
 }
 
 export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>(
@@ -84,7 +84,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
         if (!isMountedRef.current) return;
         setConnectionState(newState);
         onConnectionStateChanged(newState);
-    }, [onConnectionStateChanged]);
+    }, [onConnectionStateChanged, setConnectionState]);
     
     // Procesa respuestas de comandos, no datos de sensores
     const handleNotifications = useCallback((value: DataView) => {
@@ -332,3 +332,5 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   }
 );
 BleConnector.displayName = "BleConnector";
+
+    
