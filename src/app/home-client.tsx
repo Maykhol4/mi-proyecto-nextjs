@@ -163,7 +163,7 @@ export default function HomeClient() {
     <>
       <BleConnector
         ref={bleConnectorRef}
-        onConnectionStateChange={setConnectionState}
+        onConnectionStateChanged={setConnectionState}
       />
 
       <WifiConfigModal 
