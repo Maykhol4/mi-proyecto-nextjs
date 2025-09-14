@@ -190,10 +190,12 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
             clearTimeout(scanTimeoutRef.current);
             scanTimeoutRef.current = null;
         }
-        try {
-            await BleClient.stopLEScan();
-        } catch (error) {
-            console.warn("Error stopping scan", error);
+        if (isNative) {
+            try {
+                await BleClient.stopLEScan();
+            } catch (error) {
+                console.warn("Error stopping scan", error);
+            }
         }
         if (isMountedRef.current) {
             setIsScanModalOpen(false);
@@ -201,36 +203,54 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
                 updateConnectionState('disconnected');
             }
         }
-    }, [connectionState, updateConnectionState]);
+    }, [connectionState, updateConnectionState, isNative]);
 
     const startScan = useCallback(async () => {
         setDevices([]);
         updateConnectionState('scanning');
-        setIsScanModalOpen(true);
         
-        try {
-            await BleClient.requestLEScan(
-                { services: [], allowDuplicates: false },
-                (result) => {
-                    if (result.device.name) {
-                       setDevices(prev => {
-                            if (!prev.some(d => d.deviceId === result.device.deviceId)) {
-                                return [...prev, { deviceId: result.device.deviceId, name: result.device.name }];
-                            }
-                            return prev;
-                        });
+        if (isNative) {
+            setIsScanModalOpen(true);
+            try {
+                await BleClient.requestLEScan(
+                    { services: [], allowDuplicates: false },
+                    (result) => {
+                        if (result.device.name) {
+                           setDevices(prev => {
+                                if (!prev.some(d => d.deviceId === result.device.deviceId)) {
+                                    return [...prev, { deviceId: result.device.deviceId, name: result.device.name }];
+                                }
+                                return prev;
+                            });
+                        }
                     }
+                );
+    
+                scanTimeoutRef.current = setTimeout(stopScan, SCAN_DURATION_MS);
+            } catch (error) {
+                console.error("Scan error", error);
+                toast({ title: 'Error de Escaneo', description: (error as Error).message, variant: 'destructive' });
+                updateConnectionState('disconnected');
+                setIsScanModalOpen(false);
+            }
+        } else {
+            // Web Bluetooth Flow
+            try {
+                const device = await BleClient.requestDevice({
+                    services: [UART_SERVICE_UUID]
+                });
+                if (device) {
+                    await connectToDevice(device);
+                } else {
+                   updateConnectionState('disconnected');
                 }
-            );
-
-            scanTimeoutRef.current = setTimeout(stopScan, SCAN_DURATION_MS);
-        } catch (error) {
-            console.error("Scan error", error);
-            toast({ title: 'Error de Escaneo', description: (error as Error).message, variant: 'destructive' });
-            updateConnectionState('disconnected');
-            setIsScanModalOpen(false);
+            } catch (error) {
+                console.error("Web Scan error", error);
+                toast({ title: 'Error de Escaneo Web', description: (error as Error).message, variant: 'destructive' });
+                updateConnectionState('disconnected');
+            }
         }
-    }, [updateConnectionState, stopScan, toast]);
+    }, [updateConnectionState, stopScan, toast, isNative, connectToDevice]);
 
     const sendCommand = async (command: object) => {
       if (!connectedDeviceRef.current) {
@@ -332,5 +352,3 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
   }
 );
 BleConnector.displayName = "BleConnector";
-
-    
