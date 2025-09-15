@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, type FC, useRef, useEffect } from 'react';
+import React, { useState, type FC, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,13 +15,23 @@ import {
   Search,
   RefreshCw,
   Eye,
-  EyeOff
+  EyeOff,
+  WifiOff
 } from 'lucide-react';
-import type { BleConnectorRef, ConnectionState } from './ble-connector';
+import type { BleConnectorRef, ConnectionState, SensorData } from './ble-connector';
 import { BleConnector } from './ble-connector';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { BleClient } from '@capacitor-community/bluetooth-le';
+import { Capacitor } from '@capacitor/core';
+
+const SCAN_DURATION_MS = 10000;
+
+interface BleDevice {
+  deviceId: string;
+  name?: string;
+}
 
 const WifiConfigModal: FC<{
     isOpen: boolean;
@@ -117,31 +127,84 @@ const WifiConfigModal: FC<{
 // --- Main UI Component ---
 export default function HomeClient() {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
+  const [wifiStatus, setWifiStatus] = useState<SensorData['wifi_status']>('disconnected');
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
+  const [isScanModalOpen, setIsScanModalOpen] = useState(false);
+  const [scanResults, setScanResults] = useState<BleDevice[]>([]);
   
   const bleConnectorRef = useRef<BleConnectorRef>(null);
-  
+  const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isNative = Capacitor.isNativePlatform();
+
   const isConnected = connectionState === 'connected';
   const isConnectingOrScanning = connectionState === 'connecting' || connectionState === 'scanning';
 
   const handleSaveWifi = (ssid: string, psk: string) => {
       bleConnectorRef.current?.sendWifiConfig(ssid, psk);
   }
+  
+  const handleSensorData = useCallback((data: SensorData) => {
+    if (data.wifi_status) {
+        setWifiStatus(data.wifi_status);
+    }
+  }, []);
+
+  const handleDisconnect = async () => {
+    await bleConnectorRef.current?.disconnect();
+    setWifiStatus('disconnected');
+  };
 
   const handleBleConnectClick = () => {
-    bleConnectorRef.current?.startScan();
+    if (!isNative) {
+        bleConnectorRef.current?.startScan();
+    } else {
+        setIsScanModalOpen(true);
+        bleConnectorRef.current?.startScan();
+        scanTimeoutRef.current = setTimeout(stopScanning, SCAN_DURATION_MS);
+    }
   };
-
-  const handleDisconnect = () => {
-    bleConnectorRef.current?.disconnect();
+  
+  const stopScanning = useCallback(async () => {
+    if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+        scanTimeoutRef.current = null;
+    }
+    if (isNative) {
+        try {
+            await BleClient.stopLEScan();
+        } catch (error) {
+            console.warn("Error stopping scan", error);
+        }
+    }
+    if (connectionState === 'scanning') {
+       setConnectionState('disconnected');
+    }
+    setIsScanModalOpen(false);
+  }, [connectionState, isNative]);
+  
+  const handleConnectToDevice = async (device: BleDevice) => {
+      if (bleConnectorRef.current?.connectionState === 'scanning') {
+          await stopScanning();
+      }
+      // El componente BleConnector se encarga de la lógica de conexión
+      // Aquí solo cerramos el modal
+      setIsScanModalOpen(false);
   };
+  
+  useEffect(() => {
+    // Si la conexión se establece con éxito, cerramos el modal
+    if(connectionState === 'connected') {
+      setIsScanModalOpen(false);
+    }
+  }, [connectionState]);
 
-  const getStatusBadge = () => {
+
+  const getBleStatusBadge = () => {
     switch (connectionState) {
-        case 'connected':
-            return 'bg-blue-600 hover:bg-blue-700';
+        case 'connected': return 'bg-blue-600 hover:bg-blue-700';
         case 'connecting':
-        case 'scanning':
+        case 'scanning': 
+        case 'reconnecting':
             return 'bg-yellow-500 hover:bg-yellow-600';
         case 'disconnected':
         default:
@@ -149,12 +212,31 @@ export default function HomeClient() {
     }
   };
   
-  const getConnectionStateText = () => {
+  const getBleConnectionStateText = () => {
       switch(connectionState) {
-          case 'connected': return 'Conectado (BLE)';
+          case 'connected': return 'BLE Conectado';
           case 'connecting': return 'Conectando...';
           case 'scanning': return 'Buscando...';
+          case 'reconnecting': return 'Reconectando...';
           case 'disconnected': return 'Desconectado';
+      }
+  }
+
+  const getWifiStatusBadge = () => {
+    switch (wifiStatus) {
+        case 'connected': return 'bg-green-600 hover:bg-green-700';
+        case 'connecting': return 'bg-yellow-500 hover:bg-yellow-600';
+        case 'disconnected':
+        default: return 'bg-red-600 hover:bg-red-700';
+    }
+  }
+  
+  const getWifiConnectionStateText = () => {
+      switch(wifiStatus) {
+          case 'connected': return 'WiFi Conectado';
+          case 'connecting': return 'Conectando WiFi...';
+          case 'disconnected':
+          default: return 'WiFi Desconectado';
       }
   }
 
@@ -164,6 +246,8 @@ export default function HomeClient() {
       <BleConnector
         ref={bleConnectorRef}
         onConnectionStateChanged={setConnectionState}
+        onSensorData={handleSensorData}
+        onDeviceListChange={setScanResults}
       />
 
       <WifiConfigModal 
@@ -171,6 +255,58 @@ export default function HomeClient() {
         onClose={() => setIsWifiModalOpen(false)}
         onSave={handleSaveWifi}
       />
+      
+      {isNative && (
+        <Dialog open={isScanModalOpen} onOpenChange={(isOpen) => { if (!isOpen) stopScanning(); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Dispositivos BLE Encontrados</DialogTitle>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+              {connectionState === 'scanning' && (
+                <div className="flex items-center justify-center space-x-2">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Buscando dispositivos...</span>
+                </div>
+              )}
+              <div className="max-h-60 overflow-y-auto space-y-2">
+                {scanResults.length > 0 ? (
+                  scanResults.map(device => (
+                    <div key={device.deviceId} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                      <div className="flex-1">
+                        <div className="font-medium">
+                          {device.name}
+                        </div>
+                        <div className="text-sm text-muted-foreground">{device.deviceId}</div>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        onClick={() => handleConnectToDevice(device)}
+                        disabled={connectionState === 'connecting'}
+                      >
+                        {connectionState === 'connecting' ? 'Conectando...' : 'Conectar'}
+                      </Button>
+                    </div>
+                  ))
+                ) : (
+                  connectionState !== 'scanning' && (
+                    <p className="text-center text-muted-foreground py-4">
+                      No se encontraron dispositivos. <br/>
+                      Verifica que tu dispositivo esté encendido y cerca.
+                    </p>
+                  )
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={stopScanning}>
+                {connectionState === 'scanning' ? 'Cancelar Búsqueda' : 'Cerrar'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
 
       {connectionState === 'disconnected' ? (
         // --- Disconnected State UI ---
@@ -216,9 +352,13 @@ export default function HomeClient() {
                   <div><h1 className="text-xl font-bold text-gray-900">AQUADATA 2.0</h1><p className="text-sm text-muted-foreground">Configurador WiFi</p></div>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Badge variant={'default'} className={`flex items-center space-x-2 ${getStatusBadge()}`}>
+                    <Badge variant={'default'} className={`flex items-center space-x-2 ${getWifiStatusBadge()}`}>
+                        {wifiStatus === 'connected' ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+                        <span>{getWifiConnectionStateText()}</span>
+                    </Badge>
+                  <Badge variant={'default'} className={`flex items-center space-x-2 ${getBleStatusBadge()}`}>
                     {isConnected ? <BluetoothConnected className="w-4 h-4" /> : <Bluetooth className="w-4 h-4" />}
-                    <span>{getConnectionStateText()}</span>
+                    <span>{getBleConnectionStateText()}</span>
                   </Badge>
                   <Button onClick={handleDisconnect} variant="destructive" size="sm">
                     <BluetoothOff className="mr-2 h-4 w-4" />
@@ -238,7 +378,7 @@ export default function HomeClient() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex justify-center">
-                    <Button onClick={() => setIsWifiModalOpen(true)} size="lg">
+                    <Button onClick={() => setIsWifiModalOpen(true)} size="lg" disabled={!isConnected}>
                         <Settings className="mr-2 h-5 w-5" />
                         Configurar WiFi
                     </Button>
