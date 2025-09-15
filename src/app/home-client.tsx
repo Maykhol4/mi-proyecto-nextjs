@@ -121,18 +121,18 @@ export default function HomeClient() {
           <div className="mx-auto bg-primary/10 text-primary w-16 h-16 rounded-full flex items-center justify-center mb-4">
             <Bluetooth className="w-8 h-8" />
           </div>
-          <CardTitle className="text-2xl font-bold">AQUADATA 2.0</CardTitle>
-          <CardDescription>Herramienta de Configuración WiFi</CardDescription>
+          <CardTitle className="text-3xl font-bold">AQUADATA 2.0</CardTitle>
+          <CardDescription className="text-lg">Herramienta de Configuración WiFi</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground mb-6">Conéctate a tu dispositivo ESP32 para configurar la red WiFi.</p>
+          <p className="text-muted-foreground mb-6 px-4">Conéctate a tu dispositivo ESP32 para configurar la red WiFi de forma inalámbrica.</p>
           <Button
             onClick={handleStartScan}
             disabled={connectionState === 'scanning' || connectionState === 'connecting'}
-            className="w-full h-12"
+            className="w-full h-12 text-base"
           >
             {connectionState === 'scanning' ? (
-              <><RefreshCw className="w-5 h-5 mr-2 animate-spin" /><span>Buscando...</span></>
+              <><RefreshCw className="w-5 h-5 mr-2 animate-spin" /><span>Buscando Dispositivo...</span></>
             ) : (
               <><Search className="w-5 h-5 mr-2" /><span>Buscar Dispositivo</span></>
             )}
@@ -140,7 +140,7 @@ export default function HomeClient() {
           {connectionState === 'error' && (
             <div className="mt-4 flex items-center justify-center text-sm text-red-600 space-x-2">
               <AlertCircle className="w-4 h-4" />
-              <p>Error de conexión. Inténtalo de nuevo.</p>
+              <p>Error de conexión. Revisa que el Bluetooth esté activo.</p>
             </div>
           )}
         </CardContent>
@@ -155,7 +155,7 @@ export default function HomeClient() {
           <div className="flex justify-between items-start">
             <div>
               <CardTitle className="text-2xl font-bold">Panel de Control</CardTitle>
-              <CardDescription>Dispositivo conectado: <span className="font-medium text-foreground">{connectedDevice?.name}</span></CardDescription>
+              <CardDescription>Dispositivo: <span className="font-medium text-foreground">{connectedDevice?.name}</span></CardDescription>
             </div>
             <div className="flex items-center space-x-2">
               <Badge variant="outline" className={`flex items-center space-x-2 ${wifiInfo.color}`}>{wifiInfo.icon}<span>{wifiInfo.text}</span></Badge>
@@ -165,19 +165,19 @@ export default function HomeClient() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
-            <div className="flex items-center space-x-3">
-              <Zap className="w-8 h-8 text-primary" />
+            <div className="flex items-center space-x-4">
+              <Zap className="w-8 h-8 text-primary flex-shrink-0" />
               <div>
-                <h3 className="font-semibold text-lg">Configuración WiFi</h3>
-                <p className="text-muted-foreground text-sm">Envía las credenciales de tu red al dispositivo AQUADATA.</p>
+                <h3 className="font-semibold text-lg">Configuración Inalámbrica</h3>
+                <p className="text-muted-foreground text-sm">Envía las credenciales de tu red al dispositivo AQUADATA para que pueda conectarse a internet.</p>
               </div>
             </div>
           </div>
-          <Button onClick={() => setIsWifiModalOpen(true)} size="lg" className="w-full h-12">
+          <Button onClick={() => setIsWifiModalOpen(true)} size="lg" className="w-full h-12 text-base">
             <Settings className="mr-2 h-5 w-5" />
             Configurar WiFi del Dispositivo
           </Button>
-          <Button onClick={() => disconnect(false)} variant="destructive" className="w-full h-12">
+          <Button onClick={() => disconnect(false)} variant="destructive" className="w-full h-12 text-base">
             <BluetoothOff className="mr-2 h-5 w-5" />
             Desconectar
           </Button>

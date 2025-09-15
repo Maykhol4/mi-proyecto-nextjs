@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Search, RefreshCw, Zap, Bluetooth } from 'lucide-react';
+import { Search, RefreshCw, Zap, Bluetooth, Wifi } from 'lucide-react';
 import type { BleDevice, ConnectionState } from '@/lib/ble-types';
 
 interface ScanModalProps {
@@ -38,9 +38,9 @@ export function ScanModal({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center space-x-2">
+          <DialogTitle className="flex items-center space-x-2 text-xl">
             <Search className="w-5 h-5" />
-            <span>Dispositivos BLE Encontrados</span>
+            <span>Dispositivos Cercanos</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -49,35 +49,35 @@ export function ScanModal({
             <div className="space-y-3">
               <div className="flex items-center justify-center space-x-2">
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Buscando dispositivos cercanos...</span>
+                <span className="text-sm text-muted-foreground">Buscando dispositivos BLE...</span>
               </div>
-              <Progress value={scanProgress} className="w-full" />
+              <Progress value={scanProgress} className="w-full h-2" />
             </div>
           )}
 
-          <div className="max-h-80 overflow-y-auto space-y-2">
+          <div className="max-h-80 overflow-y-auto space-y-3 p-1">
             {devices.length > 0 ? (
               devices.map(device => {
                 const signal = device.rssi ? getSignalStrength(device.rssi) : null;
                 return (
-                  <Card key={device.deviceId} className="hover:bg-accent transition-colors cursor-pointer" onClick={() => onConnect(device)}>
+                  <Card key={device.deviceId} className="hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => onConnect(device)}>
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <Zap className="w-4 h-4 text-primary flex-shrink-0" />
-                            <h3 className="font-medium truncate">{device.name}</h3>
+                          <div className="flex items-center space-x-3 mb-1">
+                            <Zap className="w-5 h-5 text-primary flex-shrink-0" />
+                            <h3 className="font-semibold text-base truncate">{device.name}</h3>
                           </div>
-                          <p className="text-xs text-muted-foreground truncate mb-2">
-                            {device.deviceId}
+                          <p className="text-xs text-muted-foreground truncate mb-2 ml-8">
+                            ID: {device.deviceId}
                           </p>
                           {signal && (
-                            <div className="flex items-center space-x-2">
-                              <div className="flex space-x-0.5 items-center">
+                            <div className="flex items-center space-x-2 ml-8">
+                              <div className="flex space-x-0.5 items-end">
                                 {[...Array(4)].map((_, i) => (
                                   <div
                                     key={i}
-                                    className={`w-1 rounded-full ${i < signal.bars ? 'bg-current ' + signal.color : 'bg-gray-200'}`}
+                                    className={`w-1.5 rounded-full ${i < signal.bars ? 'bg-current ' + signal.color : 'bg-gray-200'}`}
                                     style={{ height: `${(i + 1) * 3 + 4}px` }}
                                   />
                                 ))}
@@ -106,10 +106,10 @@ export function ScanModal({
               })
             ) : (
               connectionState !== 'scanning' && (
-                <div className="text-center py-8">
+                <div className="text-center py-8 text-muted-foreground">
                   <Bluetooth className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                  <p className="text-muted-foreground mb-2">No se encontraron dispositivos</p>
-                  <p className="text-sm text-muted-foreground">Verifica que tu dispositivo esté encendido.</p>
+                  <p className="font-medium mb-2">No se encontraron dispositivos</p>
+                  <p className="text-sm">Verifica que tu dispositivo AQUADATA esté encendido y dentro del alcance.</p>
                 </div>
               )
             )}
