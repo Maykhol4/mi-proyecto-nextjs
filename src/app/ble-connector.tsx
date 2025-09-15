@@ -237,7 +237,8 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
             // Web Bluetooth Flow
             try {
                 const device = await BleClient.requestDevice({
-                    services: [UART_SERVICE_UUID]
+                    acceptAllDevices: true,
+                    optionalServices: [UART_SERVICE_UUID]
                 });
                 if (device) {
                     await connectToDevice(device);
