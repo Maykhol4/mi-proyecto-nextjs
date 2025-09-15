@@ -180,7 +180,7 @@ export const BleConnector = React.forwardRef<BleConnectorRef, BleConnectorProps>
             if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
             isConnectingRef.current = false;
             updateConnectionState('disconnected');
-            toast({ title: 'Conexión Fallida', description: (error as Error).message, variant: 'destructive' });
+            toast({ title: 'Conexión Fallida', description: 'El dispositivo no es compatible o no se pudo iniciar la comunicación.', variant: 'destructive' });
         }
 
     }, [updateConnectionState, handleNotifications, disconnect, toast]);
