@@ -16,9 +16,9 @@ interface BleDevice {
 }
 
 // Configuración de servicios BLE (AHORA USANDO TUS UUIDs)
-const UART_SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
-const UART_TX_CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8'; // Para notificaciones (ESP32 -> App)
-const UART_RX_CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8'; // Para escrituras (App -> ESP32)
+const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const UART_TX_CHARACTERISTIC_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // Para notificaciones (ESP32 -> App)
+const UART_RX_CHARACTERISTIC_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // Para escrituras (App -> ESP32)
 
 const SCAN_DURATION_MS = 10000;
 const CONNECTION_TIMEOUT_MS = 15000;
