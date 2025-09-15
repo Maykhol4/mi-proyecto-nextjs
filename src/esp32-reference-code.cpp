@@ -4,7 +4,8 @@
  * @brief Código de referencia C++ (Framework Arduino) para un ESP32 compatible con la app AQUADATA 2.0.
  * 
  * Este código configura un servidor BLE con el servicio y las características UART
- * que la aplicación móvil espera encontrar. Puedes usarlo como base para tu proyecto.
+ * que la aplicación móvil espera encontrar. Incluye la corrección del descriptor BLE2902
+ * para asegurar la compatibilidad de las notificaciones.
  * 
  * Basado en los ejemplos de Neil Kolban y Evandro Copercini.
  */
@@ -13,6 +14,7 @@
 #include <BLEUtils.h>
 #include <BLEServer.h>
 #include <BLE2902.h>
+#include <ArduinoJson.h> // Necesario para parsear los comandos de la app
 
 // --- Nombre del Dispositivo BLE ---
 // Este es el nombre que aparecerá en la aplicación cuando busques dispositivos.
@@ -36,6 +38,7 @@
 
 BLECharacteristic *pTxCharacteristic;
 bool deviceConnected = false;
+String rxBuffer = ""; // Buffer para acumular datos entrantes
 
 // Clase para manejar los eventos de conexión/desconexión del servidor BLE
 class MyServerCallbacks: public BLEServerCallbacks {
@@ -52,26 +55,70 @@ class MyServerCallbacks: public BLEServerCallbacks {
     }
 };
 
+// Función para enviar una respuesta JSON a la app
+void sendJsonResponse(const JsonDocument& doc) {
+    if (deviceConnected) {
+        String jsonString;
+        serializeJson(doc, jsonString);
+        jsonString += "\n"; // Asegurarse de que termina con un salto de línea
+        pTxCharacteristic->setValue((uint8_t*)jsonString.c_str(), jsonString.length());
+        pTxCharacteristic->notify();
+        Serial.print("Respuesta enviada: ");
+        Serial.println(jsonString);
+    }
+}
+
+
 // Clase para manejar las escrituras en la característica RX
 class MyCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) {
-      std::string rxValue = pCharacteristic->getValue();
+        std::string value = pCharacteristic->getValue();
+        rxBuffer += String(value.c_str());
 
-      if (rxValue.length() > 0) {
-        Serial.println("*********");
-        Serial.print("Received Value: ");
-        for (int i = 0; i < rxValue.length(); i++) {
-          Serial.print(rxValue[i]);
-        }
-        Serial.println();
-        Serial.println("*********");
+        // Procesar solo cuando se recibe un salto de línea
+        if (rxBuffer.endsWith("\n")) {
+            rxBuffer.trim(); // Limpiar espacios en blanco
+            Serial.print("Comando JSON recibido: ");
+            Serial.println(rxBuffer);
 
-        // Responder a la app (ejemplo: hacer eco de lo recibido)
-        if (deviceConnected) {
-          pTxCharacteristic->setValue("Echo: " + rxValue);
-          pTxCharacteristic->notify();
+            JsonDocument doc;
+            DeserializationError error = deserializeJson(doc, rxBuffer);
+            
+            rxBuffer = ""; // Limpiar buffer después de procesar
+
+            JsonDocument responseDoc;
+            if (error) {
+                Serial.print("deserializeJson() failed: ");
+                Serial.println(error.c_str());
+                responseDoc["type"] = "command_response";
+                responseDoc["status"] = "error";
+                responseDoc["message"] = "Invalid JSON format.";
+                sendJsonResponse(responseDoc);
+                return;
+            }
+
+            String type = doc["type"];
+            if (type == "wifi_config") {
+                String ssid = doc["ssid"];
+                String password = doc["password"];
+                Serial.print("Configurando WiFi para SSID: ");
+                Serial.println(ssid);
+                
+                // Aquí iría tu lógica para conectar al WiFi
+                // WiFi.begin(ssid.c_str(), password.c_str());
+                
+                // Enviar respuesta de éxito (simulada)
+                responseDoc["type"] = "wifi_config_response";
+                responseDoc["status"] = "success";
+                responseDoc["message"] = "WiFi credentials received and being processed.";
+                sendJsonResponse(responseDoc);
+            } else {
+                responseDoc["type"] = "command_response";
+                responseDoc["status"] = "error";
+                responseDoc["message"] = "Unknown command type.";
+                sendJsonResponse(responseDoc);
+            }
         }
-      }
     }
 };
 
@@ -95,7 +142,10 @@ void setup() {
                       CHARACTERISTIC_UUID_TX,
                       BLECharacteristic::PROPERTY_NOTIFY
                     );
-  pTxCharacteristic->addDescriptor(new BLE2902()); // Necesario para notificaciones
+  
+  // !! SOLUCIÓN AL ERROR "GATT NOT SUPPORTED" !!
+  // Añadir el descriptor 2902 es crucial para que las notificaciones funcionen
+  pTxCharacteristic->addDescriptor(new BLE2902());
 
   // 5. Crear la característica de Recepción (RX)
   BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(
@@ -121,5 +171,16 @@ void setup() {
 void loop() {
   // El código principal se maneja a través de callbacks, 
   // pero puedes poner lógica adicional aquí si es necesario.
-  delay(2000); 
+  
+  // Ejemplo: enviar un "keep-alive" o un estado cada 10 segundos
+  static unsigned long lastMessageTime = 0;
+  if (deviceConnected && (millis() - lastMessageTime > 10000)) {
+    String statusMessage = "{\"type\":\"status_update\",\"message\":\"AQUADATA device is alive.\"}\n";
+    pTxCharacteristic->setValue((uint8_t*)statusMessage.c_str(), statusMessage.length());
+    pTxCharacteristic->notify();
+    lastMessageTime = millis();
+    Serial.println("Sent keep-alive message.");
+  }
+  
+  delay(100); 
 }
