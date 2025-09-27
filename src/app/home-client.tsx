@@ -132,6 +132,9 @@ export default function HomeClient() {
       return;
     }
     sendCommand({ type: 'set_altitude', value: altitudeValue });
+    // Optimistic UI update
+    setConfiguredAltitude(altitudeValue);
+    setAltitude('');
   };
   
   const wifiStatus = lastSensorData?.wifi_status || 'disconnected';
