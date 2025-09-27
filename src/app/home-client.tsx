@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   RefreshCw,
   Bluetooth,
@@ -19,13 +21,17 @@ import {
   Waves,
   Shield,
   CheckCircle,
+  Mountain,
+  Send,
 } from 'lucide-react';
 import { useBle } from '@/hooks/use-ble';
 import { ScanModal } from '@/components/scan-modal';
 import { WifiConfigModal } from '@/components/wifi-config-modal';
 import { SCAN_DURATION_MS } from '@/lib/ble-types';
+import { useToast } from '@/hooks/use-toast';
 
 export default function HomeClient() {
+  const { toast } = useToast();
   const {
     connectionState,
     devices,
@@ -42,6 +48,7 @@ export default function HomeClient() {
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
+  const [altitude, setAltitude] = useState('');
 
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -92,6 +99,19 @@ export default function HomeClient() {
 
   const handleSaveWifi = (ssid: string, psk: string) => {
     sendCommand({ type: 'wifi_config', ssid, password: psk });
+  };
+
+  const handleSendAltitude = () => {
+    const altitudeValue = parseInt(altitude, 10);
+    if (isNaN(altitudeValue)) {
+      toast({
+        title: 'Valor no válido',
+        description: 'Por favor, introduce un número válido para la altitud.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    sendCommand({ type: 'set_altitude', value: altitudeValue });
   };
   
   const wifiStatus = lastSensorData?.wifi_status || 'disconnected';
@@ -295,45 +315,89 @@ export default function HomeClient() {
           </Card>
         </div>
 
-        {/* Main Actions Card */}
-        <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
-          <CardHeader>
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl flex items-center justify-center flex-shrink-0">
-                <Zap className="w-6 h-6 text-white" />
+        {/* Main Actions Cards */}
+        <div className="space-y-6">
+          <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader>
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Zap className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex-1">
+                  <CardTitle className="text-xl font-bold text-gray-900 mb-2">
+                    Configuración Inalámbrica
+                  </CardTitle>
+                  <CardDescription className="text-base text-gray-600 leading-relaxed">
+                    Envía las credenciales de tu red WiFi al dispositivo AQUADATA para establecer la conexión a internet.
+                  </CardDescription>
+                </div>
               </div>
-              <div className="flex-1">
-                <CardTitle className="text-xl font-bold text-gray-900 mb-2">
-                  Configuración Inalámbrica
-                </CardTitle>
-                <CardDescription className="text-base text-gray-600 leading-relaxed">
-                  Envía las credenciales de tu red WiFi al dispositivo AQUADATA para establecer la conexión a internet
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          
-          <CardContent className="space-y-4">
-            <Button 
-              onClick={() => setIsWifiModalOpen(true)} 
-              size="lg" 
-              className="w-full h-12 text-base font-semibold bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-lg shadow-blue-500/20 transition-all duration-200 hover:scale-[1.01]"
-            >
-              <Settings className="mr-3 h-5 w-5" />
-              Configurar Red WiFi
-            </Button>
+            </CardHeader>
             
-            <Button 
-              onClick={() => disconnect(false)} 
-              variant="outline" 
-              size="lg"
-              className="w-full h-12 text-base font-medium border-2 border-gray-200 hover:border-red-200 hover:bg-red-50 hover:text-red-700 transition-all duration-200"
-            >
-              <BluetoothOff className="mr-3 h-5 w-5" />
-              Desconectar Dispositivo
-            </Button>
-          </CardContent>
-        </Card>
+            <CardContent className="space-y-4">
+              <Button 
+                onClick={() => setIsWifiModalOpen(true)} 
+                size="lg" 
+                className="w-full h-12 text-base font-semibold bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-lg shadow-blue-500/20 transition-all duration-200 hover:scale-[1.01]"
+              >
+                <Settings className="mr-3 h-5 w-5" />
+                Configurar Red WiFi
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader>
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Mountain className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex-1">
+                  <CardTitle className="text-xl font-bold text-gray-900 mb-2">
+                    Ajuste de Altitud
+                  </CardTitle>
+                  <CardDescription className="text-base text-gray-600 leading-relaxed">
+                    Calibra el sensor barométrico para lecturas de oxígeno más precisas. Introduce la altitud en metros.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor="altitude" className="sr-only">Altitud</Label>
+                  <Input
+                    id="altitude"
+                    type="number"
+                    placeholder="Ej: 550 (metros)"
+                    value={altitude}
+                    onChange={(e) => setAltitude(e.target.value)}
+                    className="h-12 text-base"
+                  />
+                </div>
+                <Button 
+                  onClick={handleSendAltitude}
+                  size="lg" 
+                  className="h-12 font-semibold"
+                  disabled={!altitude.trim()}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  Enviar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Button 
+            onClick={() => disconnect(false)} 
+            variant="outline" 
+            size="lg"
+            className="w-full h-12 text-base font-medium border-2 border-gray-200 hover:border-red-200 hover:bg-red-50 hover:text-red-700 transition-all duration-200"
+          >
+            <BluetoothOff className="mr-3 h-5 w-5" />
+            Desconectar Dispositivo
+          </Button>
+        </div>
 
         {/* Device Info */}
         <div className="text-center mt-6 text-sm text-gray-500">

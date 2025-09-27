@@ -112,6 +112,27 @@ class MyCallbacks: public BLECharacteristicCallbacks {
                 responseDoc["status"] = "success";
                 responseDoc["message"] = "WiFi credentials received and being processed.";
                 sendJsonResponse(responseDoc);
+
+            } else if (type == "set_altitude") {
+                if (doc.containsKey("value") && doc["value"].is<int>()) {
+                    int altitude = doc["value"].as<int>();
+                    Serial.print("Ajustando altitud a: ");
+                    Serial.print(altitude);
+                    Serial.println(" metros.");
+
+                    // Aquí iría tu lógica para guardar o usar el valor de altitud
+                    // Por ejemplo: preferences.putInt("altitude", altitude);
+
+                    responseDoc["type"] = "altitude_set_response";
+                    responseDoc["status"] = "success";
+                    responseDoc["message"] = "Altitud actualizada a " + String(altitude) + "m.";
+                } else {
+                    responseDoc["type"] = "altitude_set_response";
+                    responseDoc["status"] = "error";
+                    responseDoc["message"] = "Valor de altitud no válido o no proporcionado.";
+                }
+                sendJsonResponse(responseDoc);
+                
             } else {
                 responseDoc["type"] = "command_response";
                 responseDoc["status"] = "error";
