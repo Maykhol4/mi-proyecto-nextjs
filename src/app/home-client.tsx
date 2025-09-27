@@ -49,9 +49,26 @@ export default function HomeClient() {
   const [isWifiModalOpen, setIsWifiModalOpen] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [altitude, setAltitude] = useState('');
+  const [configuredAltitude, setConfiguredAltitude] = useState<number | null>(null);
 
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (lastSensorData) {
+      let altitudeValue: number | undefined = undefined;
+
+      if (lastSensorData.altitude_info && typeof lastSensorData.altitude_info.meters === 'number') {
+        altitudeValue = lastSensorData.altitude_info.meters;
+      } else if (typeof lastSensorData.altitude_meters === 'number') {
+        altitudeValue = lastSensorData.altitude_meters;
+      }
+      
+      if (altitudeValue !== undefined) {
+        setConfiguredAltitude(altitudeValue);
+      }
+    }
+  }, [lastSensorData]);
 
   const startProgressTracking = useCallback(() => {
     setScanProgress(0);
@@ -94,6 +111,9 @@ export default function HomeClient() {
   useEffect(() => {
     if (connectionState === 'connected') {
       setIsScanModalOpen(false);
+    }
+    if (connectionState === 'disconnected') {
+      setConfiguredAltitude(null);
     }
   }, [connectionState]);
 
@@ -363,9 +383,19 @@ export default function HomeClient() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center gap-4">
+              <div className="bg-slate-100/80 rounded-lg p-4">
+                <p className="text-sm font-medium text-slate-600 mb-1">Altitud Actual</p>
+                <div className="flex items-center gap-2">
+                  <Mountain className="w-5 h-5 text-slate-500" />
+                  <p className="text-2xl font-bold text-slate-800">
+                    {configuredAltitude !== null ? `${configuredAltitude} m` : '---'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 pt-2">
                 <div className="flex-1 space-y-2">
-                  <Label htmlFor="altitude" className="sr-only">Altitud</Label>
+                  <Label htmlFor="altitude" className="sr-only">Nueva Altitud</Label>
                   <Input
                     id="altitude"
                     type="number"

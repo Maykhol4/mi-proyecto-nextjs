@@ -15,6 +15,12 @@ export interface SensorData {
     readings_count?: { ph: number; do: number };
     errors_count?: { ph: number; do: number };
     wifi_status?: 'connected' | 'disconnected' | 'connecting';
+    altitude_meters?: number;
+    altitude_info?: {
+      meters?: number;
+      correction_factor?: number;
+      status?: string;
+    };
 }
 
 export type ConnectionState = 'disconnected' | 'scanning' | 'connecting' | 'connected' | 'error';
