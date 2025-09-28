@@ -382,21 +382,27 @@ export default function HomeClient() {
                     Ajuste de Altitud
                   </CardTitle>
                   <CardDescription className="text-base text-gray-600 leading-relaxed">
-                    Calibra el sensor barométrico para lecturas de oxígeno más precisas. Introduce la altitud en metros.
+                    Calibra el sensor barométrico para lecturas más precisas. Introduce la altitud en metros.
                   </CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="bg-slate-100/80 rounded-lg p-4">
-                <p className="text-sm font-medium text-slate-600 mb-1">Altitud Actual</p>
-                <div className="flex items-center gap-2">
-                  <Mountain className="w-5 h-5 text-slate-500" />
-                  <p className="text-2xl font-bold text-slate-800">
-                    {configuredAltitude !== null ? `${configuredAltitude} m` : '---'}
-                  </p>
-                </div>
-              </div>
+               <Card className="border-0 shadow-none bg-slate-100/80">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                      <Mountain className="w-5 h-5 text-orange-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Altitud Actual</p>
+                      <p className="text-lg font-bold text-gray-800">
+                        {configuredAltitude !== null ? `${configuredAltitude} m` : '---'}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
               <div className="flex items-center gap-4 pt-2">
                 <div className="flex-1 space-y-2">
