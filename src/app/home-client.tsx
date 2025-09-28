@@ -388,22 +388,6 @@ export default function HomeClient() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-               <Card className="border-0 shadow-none bg-slate-100/80">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                      <Mountain className="w-5 h-5 text-orange-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Altitud Actual</p>
-                      <p className="text-lg font-bold text-gray-800">
-                        {configuredAltitude !== null ? `${configuredAltitude} m` : '---'}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
               <div className="flex items-center gap-4 pt-2">
                 <div className="flex-1 space-y-2">
                   <Label htmlFor="altitude" className="sr-only">Nueva Altitud</Label>
