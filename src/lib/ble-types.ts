@@ -16,6 +16,7 @@ export interface SensorData {
     errors_count?: { ph: number; do: number };
     wifi_status?: 'connected' | 'disconnected' | 'connecting';
     altitude_meters?: number;
+    altitude_m?: number;
     altitude_info?: {
       meters?: number;
       correction_factor?: number;

@@ -62,6 +62,8 @@ export default function HomeClient() {
         altitudeValue = lastSensorData.altitude_info.meters;
       } else if (typeof lastSensorData.altitude_meters === 'number') {
         altitudeValue = lastSensorData.altitude_meters;
+      } else if (typeof (lastSensorData as any).altitude_m === 'number') {
+        altitudeValue = (lastSensorData as any).altitude_m;
       }
       
       if (altitudeValue !== undefined) {
