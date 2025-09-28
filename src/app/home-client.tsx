@@ -87,16 +87,21 @@ export default function HomeClient() {
   }, []);
 
   const handleStartScan = useCallback(() => {
-    startScan();
-    if (isNative) {
-      setIsScanModalOpen(true);
-      startProgressTracking();
-      scanTimeoutRef.current = setTimeout(() => {
-        stopScan();
-        setIsScanModalOpen(false);
-      }, SCAN_DURATION_MS);
+    if (!isNative) {
+      startScan();
+      return;
     }
-  }, [startScan, isNative, startProgressTracking, stopScan]);
+    
+    startScan();
+    setIsScanModalOpen(true);
+    startProgressTracking();
+  
+    if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+    scanTimeoutRef.current = setTimeout(() => {
+      stopScan();
+      setIsScanModalOpen(false);
+    }, SCAN_DURATION_MS);
+  }, [startScan, stopScan, isNative, startProgressTracking]);
 
   const handleStopScan = useCallback(() => {
     stopScan();

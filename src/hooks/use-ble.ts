@@ -12,6 +12,7 @@ import {
   CONNECTION_TIMEOUT_MS,
   CHUNK_SIZE,
   CHUNK_DELAY_MS,
+  SCAN_DURATION_MS
 } from '@/lib/ble-types';
 
 export function useBle() {
@@ -24,6 +25,7 @@ export function useBle() {
   const connectedDeviceRef = useRef<CapacitorBleDevice | null>(null);
   const receivedDataBuffer = useRef('');
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isConnectingRef = useRef(false);
   const isMountedRef = useRef(true);
   const expectDisconnectRef = useRef(false);
@@ -48,6 +50,7 @@ export function useBle() {
     return () => {
       isMountedRef.current = false;
       if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
+      if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
       if (connectedDeviceRef.current) {
         BleClient.disconnect(connectedDeviceRef.current.deviceId).catch(console.error);
       }
@@ -68,7 +71,6 @@ export function useBle() {
           console.log('Mensaje recibido:', message)
           const jsonData = JSON.parse(message) as SensorData & { type?: string; status?: string; message?: string };
           
-          // Si el tipo de mensaje es una respuesta a un comando, solo muestra un toast.
           if (jsonData.type && jsonData.type.includes('_response')) {
             toast({
               title: 'Respuesta del Dispositivo',
@@ -76,7 +78,6 @@ export function useBle() {
               variant: jsonData.status === 'success' ? 'default' : 'destructive',
             });
           } else {
-            // De lo contrario, es una actualización de estado, así que actualiza los datos del sensor.
             if (isMountedRef.current) {
               setLastSensorData(prev => ({ ...(prev || {}), ...jsonData }));
             }
@@ -188,9 +189,21 @@ export function useBle() {
       }
   }, [disconnect, toast, connectToDevice]);
 
+  const stopScan = useCallback(async () => {
+    if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+        scanTimeoutRef.current = null;
+    }
+    if (isNative) {
+      try { await BleClient.stopLEScan(); } catch (error) { /* Silently ignore */ }
+    }
+    if (isMountedRef.current && connectionState === 'scanning') {
+        setConnectionState('disconnected');
+    }
+  }, [isNative, connectionState]);
+  
   const startScan = useCallback(async () => {
-    if (connectionState === 'scanning' || connectionState === 'connecting') return;
-    if (!isMountedRef.current) return;
+    if (connectionState === 'scanning' || connectionState === 'connecting' || !isMountedRef.current) return;
 
     setDevices([]);
     setConnectionState('scanning');
@@ -201,13 +214,18 @@ export function useBle() {
           acceptAllDevices: true,
           optionalServices: [UART_SERVICE_UUID]
         });
-        if (device) {
-          await connectToDevice(device as BleDevice);
-        } else {
-          if (isMountedRef.current) setConnectionState('disconnected');
+        if (isMountedRef.current) {
+          if (device) {
+            await connectToDevice(device as BleDevice);
+          } else {
+            setConnectionState('disconnected');
+          }
         }
         return;
       }
+      
+      // Clear previous timeout if it exists
+      if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
 
       await BleClient.requestLEScan(
         { services: [], allowDuplicates: false },
@@ -229,22 +247,15 @@ export function useBle() {
           }
         }
       );
+      
+      scanTimeoutRef.current = setTimeout(stopScan, SCAN_DURATION_MS);
+
     } catch (error) {
       console.error("Scan error", error);
       toast({ title: 'Error de Escaneo', description: (error as Error).message, variant: 'destructive' });
       if (isMountedRef.current) setConnectionState('error');
     }
-  }, [connectToDevice, toast, isNative, connectionState]);
-  
-  const stopScan = useCallback(async () => {
-     if (isNative) {
-       try { await BleClient.stopLEScan(); } catch (error) { console.warn("Error stopping scan", error); }
-     }
-     if (isMountedRef.current && connectionState === 'scanning') {
-         setConnectionState('disconnected');
-     }
-  }, [isNative, connectionState]);
-
+  }, [connectToDevice, toast, isNative, connectionState, stopScan]);
 
   const sendCommand = async (command: object) => {
     if (!connectedDeviceRef.current || connectionState !== 'connected') {
