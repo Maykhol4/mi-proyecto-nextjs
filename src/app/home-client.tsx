@@ -131,7 +131,7 @@ export default function HomeClient() {
       });
       return;
     }
-    sendCommand({ type: 'set_altitude', value: altitudeValue });
+    sendCommand({ type: 'altitude_config', altitude: altitudeValue });
     // Optimistic UI update
     setConfiguredAltitude(altitudeValue);
     setAltitude('');

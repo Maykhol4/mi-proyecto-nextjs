@@ -63,6 +63,7 @@ export function useBle() {
 
       if (message.trim()) {
         try {
+          console.log('Mensaje recibido:', message)
           const jsonData = JSON.parse(message) as SensorData;
           if (jsonData.type && (jsonData as any).type.includes('_response')) {
             toast({
