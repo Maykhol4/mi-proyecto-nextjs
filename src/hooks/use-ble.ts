@@ -66,15 +66,20 @@ export function useBle() {
       if (message.trim()) {
         try {
           console.log('Mensaje recibido:', message)
-          const jsonData = JSON.parse(message) as SensorData;
-          if (jsonData.type && (jsonData as any).type.includes('_response')) {
+          const jsonData = JSON.parse(message) as SensorData & { type?: string; status?: string; message?: string };
+          
+          // Si el tipo de mensaje es una respuesta a un comando, solo muestra un toast.
+          if (jsonData.type && jsonData.type.includes('_response')) {
             toast({
               title: 'Respuesta del Dispositivo',
-              description: (jsonData as any).message || 'Comando procesado.',
-              variant: (jsonData as any).status === 'success' ? 'default' : 'destructive',
+              description: jsonData.message || 'Comando procesado.',
+              variant: jsonData.status === 'success' ? 'default' : 'destructive',
             });
           } else {
-            if (isMountedRef.current) setLastSensorData(prev => ({ ...prev, ...jsonData }));
+            // De lo contrario, es una actualización de estado, así que actualiza los datos del sensor.
+            if (isMountedRef.current) {
+              setLastSensorData(prev => ({ ...(prev || {}), ...jsonData }));
+            }
           }
         } catch (parseError) {
           console.warn('Error parseando JSON:', parseError, 'Mensaje:', `"${message}"`);
@@ -294,5 +299,3 @@ export function useBle() {
     isNative,
   };
 }
-
-    
