@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { BleClient, type BleDevice as CapacitorBleDevice } from '@capacitor-community/bluetooth-le';
 import { Capacitor } from '@capacitor/core';
@@ -292,3 +294,5 @@ export function useBle() {
     isNative,
   };
 }
+
+    
