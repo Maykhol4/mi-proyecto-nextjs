@@ -72,7 +72,7 @@ export function useBle() {
               variant: (jsonData as any).status === 'success' ? 'default' : 'destructive',
             });
           } else {
-            if (isMountedRef.current) setLastSensorData(jsonData);
+            if (isMountedRef.current) setLastSensorData(prev => ({ ...prev, ...jsonData }));
           }
         } catch (parseError) {
           console.warn('Error parseando JSON:', parseError, 'Mensaje:', `"${message}"`);
